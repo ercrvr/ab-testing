@@ -85,6 +85,34 @@ function headersRecord(h: any): Record<string, string | undefined> {
   return h as Record<string, string | undefined>;
 }
 
+// ── Data Source Tracking ──
+
+export type DataSource = 'cache' | 'api' | 'etag-revalidated' | 'stale-fallback';
+
+export interface DataSourceEvent {
+  source: DataSource;
+  timestamp: number;
+}
+
+let lastDataSource: DataSourceEvent | null = null;
+const dataSourceListeners = new Set<() => void>();
+
+export function getLastDataSource(): DataSourceEvent | null {
+  return lastDataSource ? { ...lastDataSource } : null;
+}
+
+export function subscribeDataSource(listener: () => void): () => void {
+  dataSourceListeners.add(listener);
+  return () => {
+    dataSourceListeners.delete(listener);
+  };
+}
+
+function reportDataSource(source: DataSource): void {
+  lastDataSource = { source, timestamp: Date.now() };
+  dataSourceListeners.forEach((fn) => fn());
+}
+
 // ── API Wrappers with ETag Caching ──
 
 /**
@@ -98,6 +126,7 @@ export async function listUserRepos(page = 1, perPage = 30) {
     page,
   });
   updateRateLimit(headersRecord(resp.headers));
+  reportDataSource('api');
   return resp.data;
 }
 
@@ -108,7 +137,10 @@ export async function getRepo(owner: string, repo: string) {
   const key = `repo:${owner}/${repo}`;
   const entry = cacheGetEntry<ReturnType<Octokit['rest']['repos']['get']> extends Promise<infer R> ? R extends { data: infer D } ? D : never : never>(key);
 
-  if (entry && !entry.isStale) return entry.data;
+  if (entry && !entry.isStale) {
+    reportDataSource('cache');
+    return entry.data;
+  }
 
   const headers: Record<string, string> = {};
   if (entry?.etag) headers['if-none-match'] = entry.etag;
@@ -119,16 +151,19 @@ export async function getRepo(owner: string, repo: string) {
     updateRateLimit(headersRecord(resp.headers));
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     cacheSet(key, resp.data, TTL.REPO_LIST, etag);
+    reportDataSource('api');
     return resp.data;
   } catch (err: unknown) {
     const e = err as { status?: number; response?: { headers?: Record<string, string> } };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
       if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      reportDataSource('etag-revalidated');
       return entry.data;
     }
     if (entry?.data != null) {
       console.warn('API failed, using stale cache for repo:', (err as Error).message);
+      reportDataSource('stale-fallback');
       return entry.data;
     }
     throw err;
@@ -147,7 +182,10 @@ export async function getRepoTree(
   const key = `tree:${owner}/${repo}`;
   const entry = cacheGetEntry<GitHubTreeEntry[]>(key);
 
-  if (entry && !entry.isStale) return entry.data;
+  if (entry && !entry.isStale) {
+    reportDataSource('cache');
+    return entry.data;
+  }
 
   const headers: Record<string, string> = {};
   if (entry?.etag) headers['if-none-match'] = entry.etag;
@@ -165,16 +203,19 @@ export async function getRepoTree(
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     const tree = resp.data.tree as GitHubTreeEntry[];
     cacheSet(key, tree, TTL.REPO_TREE, etag);
+    reportDataSource('api');
     return tree;
   } catch (err: unknown) {
     const e = err as { status?: number; response?: { headers?: Record<string, string> } };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
       if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      reportDataSource('etag-revalidated');
       return entry.data;
     }
     if (entry?.data != null) {
       console.warn('API failed, using stale cache for tree:', (err as Error).message);
+      reportDataSource('stale-fallback');
       return entry.data;
     }
     throw err;
@@ -192,7 +233,10 @@ export async function getFileContent(
   const key = `file:${owner}/${repo}/${path}`;
   const entry = cacheGetEntry<string>(key);
 
-  if (entry && !entry.isStale) return entry.data;
+  if (entry && !entry.isStale) {
+    reportDataSource('cache');
+    return entry.data;
+  }
 
   const reqHeaders: Record<string, string> = {};
   if (entry?.etag) reqHeaders['if-none-match'] = entry.etag;
@@ -214,6 +258,7 @@ export async function getFileContent(
       const content = new TextDecoder().decode(bytes);
       const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
       cacheSet(key, content, TTL.FILE_CONTENT, etag);
+      reportDataSource('api');
       return content;
     }
     throw new Error(`Could not read file: ${path}`);
@@ -222,10 +267,12 @@ export async function getFileContent(
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
       if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      reportDataSource('etag-revalidated');
       return entry.data;
     }
     if (entry?.data != null) {
       console.warn('API failed, using stale cache for file:', (err as Error).message);
+      reportDataSource('stale-fallback');
       return entry.data;
     }
     throw err;

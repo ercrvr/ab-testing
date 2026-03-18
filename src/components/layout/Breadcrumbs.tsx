@@ -1,4 +1,4 @@
-import { Link, useParams, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 
 interface Crumb {
@@ -14,11 +14,24 @@ function toDisplayName(dirName: string): string {
 }
 
 export function Breadcrumbs() {
-  const { owner, repo, project, testId } = useParams();
   const location = useLocation();
 
   // Only show breadcrumbs on pages deeper than /repos
   if (location.pathname === '/' || location.pathname === '/repos') return null;
+
+  // Parse route params from pathname (component is outside <Routes> so useParams won't work)
+  const segments = location.pathname.split('/').filter(Boolean);
+  let owner: string | undefined;
+  let repo: string | undefined;
+  let project: string | undefined;
+  let testId: string | undefined;
+
+  if (segments[0] === 'repo' && segments.length >= 3) {
+    owner = segments[1];
+    repo = segments[2];
+    project = segments.length >= 4 ? segments[3] : undefined;
+    testId = segments.length >= 5 ? segments[4] : undefined;
+  }
 
   const crumbs: Crumb[] = [];
 
