@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TestSummary, UseQueryResult } from '../types';
 import { getRepoTree } from '../lib/github';
-import type { GitHubTreeEntry } from '../lib/github';
 import { loadTestSummaries } from '../lib/discovery';
-import { cacheGet, cacheSet, TTL } from '../lib/cache';
 
 export function useTests(
   owner: string | undefined,
@@ -22,26 +20,10 @@ export function useTests(
     setError(null);
 
     try {
-      // Reuse cached tree
-      const treeCacheKey = `tree:${owner}/${repo}`;
-      let tree = cacheGet<GitHubTreeEntry[]>(treeCacheKey);
-
-      if (!tree) {
-        tree = await getRepoTree(owner, repo, defaultBranch);
-        cacheSet(treeCacheKey, tree, TTL.REPO_TREE);
-      }
-
-      // Check test summary cache
-      const testsCacheKey = `tests:${owner}/${repo}/${project}`;
-      const cached = cacheGet<TestSummary[]>(testsCacheKey);
-
-      if (cached) {
-        setData(cached);
-      } else {
-        const summaries = await loadTestSummaries(tree, owner, repo, project);
-        cacheSet(testsCacheKey, summaries, TTL.TEST_LIST);
-        setData(summaries);
-      }
+      // getRepoTree and getFileContent handle ETag caching internally
+      const tree = await getRepoTree(owner, repo, defaultBranch);
+      const summaries = await loadTestSummaries(tree, owner, repo, project);
+      setData(summaries);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load tests';
       setError(message);

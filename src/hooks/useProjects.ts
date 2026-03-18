@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Project, UseQueryResult } from '../types';
 import { getRepoTree } from '../lib/github';
-import type { GitHubTreeEntry } from '../lib/github';
 import { discoverProjects } from '../lib/discovery';
-import { cacheGet, cacheSet, TTL } from '../lib/cache';
 
 export function useProjects(
   owner: string | undefined,
@@ -21,15 +19,8 @@ export function useProjects(
     setError(null);
 
     try {
-      // Check tree cache
-      const treeCacheKey = `tree:${owner}/${repo}`;
-      let tree = cacheGet<GitHubTreeEntry[]>(treeCacheKey);
-
-      if (!tree) {
-        tree = await getRepoTree(owner, repo, defaultBranch);
-        cacheSet(treeCacheKey, tree, TTL.REPO_TREE);
-      }
-
+      // getRepoTree handles ETag caching internally
+      const tree = await getRepoTree(owner, repo, defaultBranch);
       const projects = discoverProjects(tree);
       setData(projects);
     } catch (err) {

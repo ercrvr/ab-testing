@@ -4,6 +4,7 @@ import { Search, Lock, Globe, Loader2, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRepo } from '../hooks/useRepo';
 import { listUserRepos, getRepo } from '../lib/github';
+import { cacheGet, cacheSet, TTL } from '../lib/cache';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
 import type { RepoInfo } from '../types';
 
@@ -28,9 +29,21 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
+function mapRepos(data: ReturnType<typeof listUserRepos> extends Promise<infer R> ? R : never): RepoItem[] {
+  return data.map((r) => ({
+    owner: r.owner.login,
+    name: r.name,
+    fullName: r.full_name,
+    description: r.description ?? null,
+    isPrivate: r.private,
+    defaultBranch: r.default_branch,
+    updatedAt: r.updated_at ?? '',
+  }));
+}
+
 export function RepoSelector() {
   const { auth } = useAuth();
-  const { selectedRepo, selectRepo } = useRepo();
+  const { selectRepo } = useRepo();
   const navigate = useNavigate();
 
   const [repos, setRepos] = useState<RepoItem[]>([]);
@@ -45,19 +58,24 @@ export function RepoSelector() {
 
   const fetchRepos = useCallback(async (pageNum: number) => {
     if (!auth.token) return;
+
+    // Check cache for page 1
+    if (pageNum === 1) {
+      const cached = cacheGet<RepoItem[]>('repos:page1');
+      if (cached) {
+        setRepos(cached);
+        setHasMore(cached.length === 30);
+        return;
+      }
+    }
+
     try {
       const data = await listUserRepos(pageNum, 30);
-      const mapped: RepoItem[] = data.map((r) => ({
-        owner: r.owner.login,
-        name: r.name,
-        fullName: r.full_name,
-        description: r.description ?? null,
-        isPrivate: r.private,
-        defaultBranch: r.default_branch,
-        updatedAt: r.updated_at ?? '',
-      }));
+      const mapped = mapRepos(data);
+
       if (pageNum === 1) {
         setRepos(mapped);
+        cacheSet('repos:page1', mapped, TTL.REPO_LIST);
       } else {
         setRepos((prev) => [...prev, ...mapped]);
       }
@@ -155,79 +173,70 @@ export function RepoSelector() {
       <h1 className="text-2xl font-heading font-bold mb-6">Select Repository</h1>
 
       {/* Search */}
-      <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+      <label className="input input-bordered flex items-center gap-2 mb-4">
+        <Search className="w-4 h-4 text-base-content/40" />
         <input
           type="text"
-          className="input input-bordered w-full pl-10 font-mono text-sm"
-          placeholder="Search repositories or type owner/repo..."
+          placeholder="Search repos or enter owner/repo..."
+          className="grow"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-      </div>
+      </label>
 
       {error && <ErrorBanner message={error} onRetry={() => fetchRepos(1)} />}
 
-      {/* Recently used */}
-      {selectedRepo && !search && (
-        <div className="mb-6">
-          <h2 className="lab-label text-base-content/50 mb-2">📌 Recently Used</h2>
-          <div className="border border-primary/30 rounded-box bg-primary/5">
-            {renderRepoRow({
-              owner: selectedRepo.owner,
-              name: selectedRepo.name,
-              fullName: selectedRepo.fullName,
-              description: selectedRepo.description,
-              isPrivate: selectedRepo.isPrivate,
-              defaultBranch: selectedRepo.defaultBranch,
-              updatedAt: '',
-            })}
-          </div>
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <span className="ml-2 text-base-content/60">Loading repositories...</span>
         </div>
       )}
 
       {/* Direct search result */}
       {directResult && !filteredRepos.some((r) => r.fullName === directResult.fullName) && (
         <div className="mb-4">
-          <h2 className="lab-label text-base-content/50 mb-2">Direct Match</h2>
-          <div className="border border-base-300 rounded-box">
+          <p className="text-xs text-base-content/50 mb-1 font-mono uppercase tracking-wider">
+            Direct match
+          </p>
+          <div className="border border-primary/30 rounded-lg bg-primary/5">
             {renderRepoRow(directResult)}
           </div>
         </div>
       )}
 
       {/* Repo list */}
-      <div>
-        <h2 className="lab-label text-base-content/50 mb-2">Your Repositories</h2>
-        {isLoading ? (
-          <div className="flex justify-center p-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          </div>
-        ) : filteredRepos.length === 0 ? (
-          <p className="text-center text-base-content/50 py-8">No repositories found.</p>
-        ) : (
-          <div className="border border-base-300 rounded-box divide-y divide-base-300">
-            {filteredRepos.map(renderRepoRow)}
-          </div>
-        )}
+      {!isLoading && (
+        <div className="space-y-0.5">
+          {filteredRepos.map(renderRepoRow)}
+        </div>
+      )}
 
-        {/* Load more */}
-        {hasMore && !search && !isLoading && (
-          <div className="text-center mt-4">
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={handleLoadMore}
-              disabled={isLoadingMore}
-            >
-              {isLoadingMore ? (
+      {/* Load more */}
+      {!isLoading && hasMore && !search && (
+        <div className="text-center mt-6">
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+          >
+            {isLoadingMore ? (
+              <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                'Load more'
-              )}
-            </button>
-          </div>
-        )}
-      </div>
+                Loading...
+              </>
+            ) : (
+              'Load more'
+            )}
+          </button>
+        </div>
+      )}
+
+      {!isLoading && filteredRepos.length === 0 && !directResult && (
+        <p className="text-center text-base-content/50 py-8">
+          {search ? 'No matching repositories found.' : 'No repositories found.'}
+        </p>
+      )}
     </div>
   );
 }

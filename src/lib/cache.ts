@@ -1,5 +1,6 @@
 interface CacheEntry<T = unknown> {
   data: T;
+  etag: string | null;
   timestamp: number;
   ttl: number;
 }
@@ -17,42 +18,86 @@ export const TTL = {
   FILE_CONTENT: 30 * 60 * 1000,   // 30 minutes
 } as const;
 
-function cacheKey(key: string): string {
+function fullKey(key: string): string {
   return CACHE_PREFIX + key;
 }
 
+function isStale(entry: CacheEntry): boolean {
+  return Date.now() - entry.timestamp > entry.ttl;
+}
+
+/**
+ * Get cached data if fresh (within TTL). Returns null if stale or missing.
+ */
 export function cacheGet<T>(key: string): T | null {
+  const entry = cacheGetEntry<T>(key);
+  if (!entry || entry.isStale) return null;
+  return entry.data;
+}
+
+/**
+ * Get the full cache entry including ETag and staleness info.
+ * Returns the entry even if stale — needed for conditional ETag requests.
+ */
+export function cacheGetEntry<T>(key: string): {
+  data: T;
+  etag: string | null;
+  isStale: boolean;
+} | null {
   try {
-    const raw = localStorage.getItem(cacheKey(key));
+    const raw = localStorage.getItem(fullKey(key));
     if (!raw) return null;
     const entry: CacheEntry<T> = JSON.parse(raw);
-    if (Date.now() - entry.timestamp > entry.ttl) {
-      localStorage.removeItem(cacheKey(key));
-      return null;
-    }
-    return entry.data;
+    return {
+      data: entry.data,
+      etag: entry.etag,
+      isStale: isStale(entry),
+    };
   } catch {
     return null;
   }
 }
 
-export function cacheSet<T>(key: string, data: T, ttl: number): void {
-  const entry: CacheEntry<T> = { data, timestamp: Date.now(), ttl };
+/**
+ * Store data in cache with TTL and optional ETag.
+ */
+export function cacheSet<T>(
+  key: string,
+  data: T,
+  ttl: number,
+  etag: string | null = null,
+): void {
+  const entry: CacheEntry<T> = { data, etag, timestamp: Date.now(), ttl };
   try {
-    localStorage.setItem(cacheKey(key), JSON.stringify(entry));
+    localStorage.setItem(fullKey(key), JSON.stringify(entry));
   } catch {
-    // localStorage full — evict old entries and retry
     evictOldEntries();
     try {
-      localStorage.setItem(cacheKey(key), JSON.stringify(entry));
+      localStorage.setItem(fullKey(key), JSON.stringify(entry));
     } catch {
       // Still full — give up silently
     }
   }
 }
 
+/**
+ * Refresh the timestamp without changing data or ETag.
+ * Used when a conditional request returns 304 Not Modified.
+ */
+export function cacheRefresh(key: string): void {
+  try {
+    const raw = localStorage.getItem(fullKey(key));
+    if (!raw) return;
+    const entry: CacheEntry = JSON.parse(raw);
+    entry.timestamp = Date.now();
+    localStorage.setItem(fullKey(key), JSON.stringify(entry));
+  } catch {
+    // ignore
+  }
+}
+
 export function cacheClear(key: string): void {
-  localStorage.removeItem(cacheKey(key));
+  localStorage.removeItem(fullKey(key));
 }
 
 export function cacheClearAll(): void {
@@ -77,11 +122,9 @@ function evictOldEntries(): void {
       const parsed: CacheEntry = JSON.parse(raw);
       entries.push({ key, timestamp: parsed.timestamp, size: raw.length });
     } catch {
-      // Remove corrupt entries
       if (key) localStorage.removeItem(key);
     }
   }
-  // Sort oldest first, evict until we've freed ~1MB
   entries.sort((a, b) => a.timestamp - b.timestamp);
   let freed = 0;
   for (const entry of entries) {
