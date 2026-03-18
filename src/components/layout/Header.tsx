@@ -2,6 +2,7 @@ import { Sun, Moon, LogOut, FlaskConical, Gauge } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useRateLimit } from '../../hooks/useRateLimit';
+import { useCacheStatus } from '../../hooks/useCacheStatus';
 import { useNavigate } from 'react-router-dom';
 import { Breadcrumbs } from './Breadcrumbs';
 
@@ -9,6 +10,7 @@ export function Header() {
   const { theme, toggleTheme } = useTheme();
   const { auth, logout } = useAuth();
   const rateLimit = useRateLimit();
+  const cacheStatus = useCacheStatus();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -23,6 +25,30 @@ export function Header() {
       : rateLimit.remaining < 500
         ? 'text-warning'
         : 'text-base-content/50';
+
+  // Cache status color
+  const cacheStatusColor =
+    cacheStatus?.source === 'api'
+      ? 'text-info/70'
+      : cacheStatus?.source === 'stale-fallback'
+        ? 'text-warning/70'
+        : 'text-success/70';
+
+  const cacheStatusDot =
+    cacheStatus?.source === 'api'
+      ? 'bg-info'
+      : cacheStatus?.source === 'stale-fallback'
+        ? 'bg-warning'
+        : 'bg-success';
+
+  const cacheStatusLabel =
+    cacheStatus?.source === 'cache'
+      ? 'cached'
+      : cacheStatus?.source === 'etag-revalidated'
+        ? 'revalidated'
+        : cacheStatus?.source === 'stale-fallback'
+          ? 'stale'
+          : 'live';
 
   return (
     <div className="sticky top-0 z-50">
@@ -41,6 +67,17 @@ export function Header() {
         </div>
 
         <div className="flex-none flex items-center gap-2">
+          {/* Data source indicator */}
+          {auth.isAuthenticated && cacheStatus && (
+            <div
+              className={`flex items-center gap-1 text-[0.65rem] font-mono ${cacheStatusColor}`}
+              title={`Last data load: ${cacheStatus.source}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cacheStatusDot}`} />
+              {cacheStatusLabel}
+            </div>
+          )}
+
           {/* Rate limit indicator */}
           {auth.isAuthenticated && rateLimit.lastChecked > 0 && (
             <div
@@ -48,14 +85,7 @@ export function Header() {
               title={`API calls: ${rateLimit.remaining.toLocaleString()} / ${rateLimit.limit.toLocaleString()} remaining`}
             >
               <Gauge className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {rateLimit.remaining.toLocaleString()}
-              </span>
-              <span className="sm:hidden">
-                {rateLimit.remaining > 999
-                  ? `${(rateLimit.remaining / 1000).toFixed(1)}k`
-                  : rateLimit.remaining}
-              </span>
+              <span>{rateLimit.remaining.toLocaleString()}</span>
             </div>
           )}
 
