@@ -1,7 +1,7 @@
 # A/B Testing Dashboard — Progress Tracker
 
-> **Last Updated:** 2026-03-18
-> **Current Phase:** Phase 2 Complete → Starting Phase 3
+> **Last Updated:** 2026-03-19
+> **Current Phase:** Phase 3 In Progress
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -72,19 +72,25 @@
 ### Phase 3: Core Navigation & Data Discovery
 | Task | Status | Notes |
 |---|---|---|
-| Implement `lib/github.ts` | ⬜ | Octokit wrapper with rate limit handling |
-| Implement `lib/discovery.ts` | ⬜ | Tree walker: find projects, tests, variants, files |
-| Implement `lib/cache.ts` | ⬜ | localStorage + ETag-based caching |
-| Implement `lib/content-type.ts` | ⬜ | Extension → renderer mapping |
-| Implement `useRepo.ts` hook | ⬜ | Selected repo state |
-| Implement `useProjects.ts` hook | ⬜ | Discover projects from repo tree |
-| Implement `useTests.ts` hook | ⬜ | List tests for a project |
-| Implement `useTestData.ts` hook | ⬜ | Lazy-load file contents for a test |
-| Build `RepoSelector.tsx` page | ⬜ | Search/browse repos |
-| Build `ProjectList.tsx` page | ⬜ | Card grid of discovered projects |
-| Build `ProjectView.tsx` page | ⬜ | Stats + test list for one project |
-| Set up `react-router-dom` hash routing | ⬜ | Routes per Dev Spec §6 |
-| Build `Header.tsx` + `Breadcrumbs.tsx` | ⬜ | Navigation chrome |
+| Implement `lib/github.ts` | 🟡 | PR #8: Octokit wrapper with `getRepoTree`, `getFileContent`, `listUserRepos`, `getRepo`. PR #9: Added ETag conditional requests on all API calls, rate limit tracking from response headers |
+| Implement `lib/discovery.ts` | 🟡 | PR #8: Tree walker finds projects, tests, variants, files. Matches `meta.json`, `results.md`, and content files |
+| Implement `lib/cache.ts` | 🟡 | PR #8: TTL-based localStorage cache. PR #9: Added ETag field, `cacheGetEntry()` for conditional requests, `cacheRefresh()` for 304 responses |
+| Implement `lib/content-type.ts` | ⬜ | Deferred — not needed until Phase 4 renderers |
+| Implement `useRepo.ts` hook | 🟡 | PR #8: Selected repo state via RepoContext |
+| Implement `useProjects.ts` hook | 🟡 | PR #8: Discovers projects from repo tree via `getRepoTree` + `discoverProjects`. PR #9: Simplified — github.ts handles caching internally |
+| Implement `useTests.ts` hook | 🟡 | PR #8: Lists tests for a project via `discoverTests`. PR #9: Simplified |
+| Implement `useTestData.ts` hook | 🟡 | PR #8: Lazy-loads file contents for a test. PR #9: Simplified |
+| Build `RepoSelector.tsx` page | 🟡 | PR #8: Search/browse repos, direct owner/repo lookup. PR #9: Added page 1 caching |
+| Build `ProjectList.tsx` page | 🟡 | PR #8: Card grid of discovered projects with test count + difficulty stats |
+| Build `ProjectView.tsx` page | 🟡 | PR #8: Stats + test list for one project |
+| Set up `react-router-dom` hash routing | 🟡 | PR #8: All 5 routes wired in App.tsx |
+| Build `Header.tsx` + `Breadcrumbs.tsx` | 🟡 | PR #8: Header with nav + Breadcrumbs component. PR #9: Breadcrumbs moved to separate always-visible bar (was hidden on mobile), rate limit indicator added to header, clickable navigation links |
+| Implement `useRateLimit.ts` hook | 🟡 | PR #9: New hook — subscribes to rate limit updates from github.ts |
+
+**Phase 3 PRs:**
+- PR #8 (`phase-3-navigation-discovery`): Initial implementation — 10 new files, 6 modified. TypeScript + Vite build clean.
+- PR #9 (`phase-3-fixes`): Fixes — ETag caching, rate limit display, mobile breadcrumbs, repo list caching. 9 files changed. TypeScript + Vite build clean.
+- **Status:** Iterating — needs testing and possible further fixes before marking complete.
 
 ---
 
@@ -126,7 +132,7 @@
 | Responsive layout (mobile/tablet) | ⬜ | Stack side-by-side → vertical on small screens |
 | Loading states & skeletons | ⬜ | All async pages |
 | Error boundaries & error pages | ⬜ | Per Dev Spec §18 |
-| Rate limit indicator in header | ⬜ | Show remaining API calls |
+| Rate limit indicator in header | 🟡 | PR #9: Added to Header.tsx — color-coded gauge (green/yellow/red) with remaining count |
 | Keyboard shortcuts | ⬜ | Navigation, theme toggle |
 | Footer | ⬜ | |
 
@@ -156,6 +162,7 @@
 | 2026-03-18 | Support both OAuth + PAT auth | OAuth for polish, PAT for simplicity/fallback |
 | 2026-03-18 | Rename GITHUB_CLIENT_ID → GH_CLIENT_ID for Actions var | GitHub disallows `GITHUB_` prefix on repo variables. Vite env var and Cloudflare Worker env var unchanged |
 | 2026-03-18 | Use `npm ci --legacy-peer-deps` in deploy workflow | @tailwindcss/vite@4.2.1 doesn't support Vite 8 yet. Temporary workaround |
+| 2026-03-19 | ETag conditional requests for caching | 304 responses don't count against GitHub API rate limit — key for staying within 5000/hr |
 
 ---
 
@@ -163,7 +170,7 @@
 
 | Issue | Status | Owner | Notes |
 |---|---|---|---|
-| None yet | — | — | — |
+| Phase 3 needs testing + iteration | Open | Owner | PR #8 and #9 need merge + live testing. Breadcrumbs, caching, rate limit display need verification on device |
 
 ---
 
@@ -227,3 +234,25 @@
 - Inline error handling for auth failures
 - `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
 - GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
+
+### 2026-03-19: Phase 3 In Progress
+- **PR #8** (`phase-3-navigation-discovery`): Core navigation + data discovery
+  - `lib/github.ts`: Octokit wrapper with `getRepoTree`, `getFileContent`, `listUserRepos`, `getRepo`
+  - `lib/discovery.ts`: Tree walker — discovers projects, tests, variants, file matching
+  - `lib/cache.ts`: TTL-based localStorage caching
+  - `hooks/useRepo.ts`, `useProjects.ts`, `useTests.ts`, `useTestData.ts`
+  - `pages/RepoSelector.tsx`: Search/browse + direct owner/repo lookup
+  - `pages/ProjectList.tsx`: Card grid with test count + difficulty stats
+  - `pages/ProjectView.tsx`: Project stats + test list
+  - `components/layout/Header.tsx` + `Breadcrumbs.tsx`
+  - Hash routing for all 5 pages
+  - 10 new files, 6 modified. Build clean.
+- **PR #9** (`phase-3-fixes`): Fixes for missing Phase 3 requirements
+  - ETag conditional requests on all API calls (304s don't count against rate limit)
+  - Rate limit indicator in header (color-coded gauge)
+  - Breadcrumbs always visible on mobile, clickable navigation
+  - Repo list page 1 caching
+  - Simplified hooks (github.ts handles caching internally)
+  - `useRateLimit.ts` hook added
+  - 9 files changed. Build clean.
+- **Needs:** Live testing, possible further iteration
