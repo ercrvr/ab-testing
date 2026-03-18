@@ -1,7 +1,7 @@
 # A/B Testing Dashboard — Progress Tracker
 
 > **Last Updated:** 2026-03-18
-> **Current Phase:** Phase 1 Complete → Starting Phase 2
+> **Current Phase:** Phase 2 Complete → Starting Phase 3
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -48,7 +48,7 @@
 | Create directory structure (see Dev Spec §3) | ✅ | src/lib, hooks, context, pages, components/layout, components/ui — 20 source files |
 | Configure Vite for hash routing + GitHub Pages base | ✅ | `base: '/ab-testing/'`, HashRouter in App.tsx |
 | Set up GitHub Actions deploy workflow | ✅ | `.github/workflows/deploy.yml` with Node 20 + npm ci + build + Pages deploy |
-| Verify blank app deploys to GitHub Pages | ⬜ | Deferred to first PR merge — will verify after this PR lands |
+| Verify blank app deploys to GitHub Pages | ✅ | Verified — site live at ercrvr.github.io/ab-testing. Uses `npm ci --legacy-peer-deps` due to @tailwindcss/vite not yet supporting Vite 8 |
 | Lab-style typography and branding | ✅ | Space Grotesk headings, monospace labels, LAB badge, backdrop blur header, animated pulse dot, feature pills |
 
 ---
@@ -56,16 +56,16 @@
 ### Phase 2: Authentication
 | Task | Status | Notes |
 |---|---|---|
-| Create Cloudflare Worker (OAuth proxy) | ⬜ | `worker/oauth-proxy.js` — ~20 lines |
-| Implement `AuthContext.tsx` | ⬜ | Token storage, user state, login/logout |
-| Implement `useAuth.ts` hook | ⬜ | Wraps AuthContext |
-| Build `Landing.tsx` page | ⬜ | OAuth button + PAT input fallback |
-| Handle OAuth callback (code → token exchange) | ⬜ | Via Cloudflare Worker |
-| PAT validation (test API call) | ⬜ | Verify token works before storing |
-| Logout + token clearing | ⬜ | |
-| **User setup:** Create GitHub OAuth App | ⬜ | Owner must do this manually |
-| **User setup:** Deploy Cloudflare Worker | ⬜ | Owner must do this manually |
-| **User setup:** Set env vars (Client ID, Worker URL) | ⬜ | `.env` or build-time config |
+| Create Cloudflare Worker (OAuth proxy) | ✅ | `worker/oauth-proxy.js` template in repo, deployed by owner to Cloudflare |
+| Implement `AuthContext.tsx` | ✅ | Token storage, user state, login/logout. `useAuth` hook exported from same file |
+| Implement `useAuth.ts` hook | ✅ | Integrated into `AuthContext.tsx` (no separate file) |
+| Build `Landing.tsx` page | ✅ | PR #6 — OAuth button + expandable PAT form + OAuth callback handler |
+| Handle OAuth callback (code → token exchange) | ✅ | CSRF state param protection, exchanges code via Cloudflare Worker |
+| PAT validation (test API call) | ✅ | Validates via `GET /user`, shows inline error on failure |
+| Logout + token clearing | ✅ | Clears all `ab-dashboard-*` localStorage keys |
+| **User setup:** Create GitHub OAuth App | ✅ | Owner created OAuth App with correct callback URL |
+| **User setup:** Deploy Cloudflare Worker | ✅ | Owner deployed worker with Client ID, Secret, and Allowed Origin |
+| **User setup:** Set env vars (Client ID, Worker URL) | ✅ | `GH_CLIENT_ID` and `OAUTH_PROXY_URL` set as GitHub repo variables |
 
 ---
 
@@ -154,6 +154,8 @@
 | 2026-03-18 | Lazy loading + localStorage cache | Respect GitHub API rate limits (5000/hr authenticated) |
 | 2026-03-18 | Auto-match files by relative path | Best UX — exact match → fuzzy match → manual pairing |
 | 2026-03-18 | Support both OAuth + PAT auth | OAuth for polish, PAT for simplicity/fallback |
+| 2026-03-18 | Rename GITHUB_CLIENT_ID → GH_CLIENT_ID for Actions var | GitHub disallows `GITHUB_` prefix on repo variables. Vite env var and Cloudflare Worker env var unchanged |
+| 2026-03-18 | Use `npm ci --legacy-peer-deps` in deploy workflow | @tailwindcss/vite@4.2.1 doesn't support Vite 8 yet. Temporary workaround |
 
 ---
 
@@ -215,3 +217,13 @@
 - `FilePair` → `FileGroup` (supports N variants)
 - Comparison view changed from 2-column to responsive grid with fullscreen popup
 - Updated: DEV_SPEC.md, AB_TEST_GUIDE.md, types.ts
+
+### 2026-03-18: Phase 2 Complete
+- OAuth login flow working end-to-end (GitHub OAuth App → Cloudflare Worker → token exchange)
+- PAT login with validation via `GET /user`
+- Landing page with OAuth button + expandable PAT form + adaptive UI (hides OAuth if no Client ID configured)
+- Route guards: ProtectedRoute wrapper redirects unauthenticated users to Landing
+- CSRF state parameter protection on OAuth flow
+- Inline error handling for auth failures
+- `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
+- GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
