@@ -1199,7 +1199,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_GITHUB_CLIENT_ID: ${{ vars.GITHUB_CLIENT_ID }}
+          VITE_GITHUB_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
           VITE_OAUTH_PROXY_URL: ${{ vars.OAUTH_PROXY_URL }}
 
       - name: Setup Pages
@@ -1219,7 +1219,7 @@ jobs:
 
 1. **Settings → Pages → Source:** Set to "GitHub Actions"
 2. **Settings → Variables (Actions):**
-   - `GITHUB_CLIENT_ID` — from your GitHub OAuth App
+   - `GH_CLIENT_ID` — from your GitHub OAuth App
    - `OAUTH_PROXY_URL` — your Cloudflare Worker URL
 
 ### Vite Config (`vite.config.ts`)
