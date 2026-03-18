@@ -6,6 +6,42 @@
 
 ---
 
+## How to Continue This Project - IMPORTANT
+
+1. **Read `DEV_SPEC.md`** — it is the single source of truth for all technical decisions
+2. **Check this file** for current status — find the first ⬜ phase and start there
+3. **Read the PR Workflow and DOC Updates sections below** — do NOT create PRs until the owner confirms phase completion unless the owner to do so. 
+4. **Update this file** after completing tasks — change ⬜ → ✅ and add notes
+5. **Test incrementally** — each phase should produce a working (if incomplete) app
+
+---
+
+## DOC Updates - IMPORTANT
+
+> **DO NOT push to main until the owner explicitly confirms there are no pending PRs that could result to conflict/s. Double-check with the owner if they forgot to tell you main is updated.**
+
+---
+
+## PR Workflow — IMPORTANT
+
+> **DO NOT create a PR until the owner explicitly confirms a phase is 100% done unless the owner requests for the PR.**
+
+1. Work on code locally / in the agent filesystem during development
+2. Iterate with the owner — they will review, request changes, test, etc.
+3. Only when the owner says the phase work is **100% complete**, create a PR with all changes for that phase
+4. PR title format: `feat: phase N — <short description>`
+5. PR body should include: what was built, files changed.
+6. Multiple phases can be bundled into one PR if the owner confirms them together
+
+**When the owner confirms a phase is 100% done, docs must be pushed to main:**
+
+1. Updated `PROGRESS.md` — mark completed tasks ✅, add notes on what was built
+2. Updated `DEV_SPEC.md` — reflect the **actual** state of the app, not just the plan. If implementation diverged from the spec (different component names, changed APIs, new patterns), update the spec to match reality. The spec should always be a living, accurate document.
+
+**This rule exists because:** The owner iterates and refines before merging. Premature PRs create noise and require force-pushes or multiple PRs for the same work. Keeping docs in sync ensures any agent can pick up the project at any time.
+
+---
+
 ## Reference Files
 
 | File | Location | Description |
@@ -171,36 +207,6 @@
 | Issue | Status | Owner | Notes |
 |---|---|---|---|
 | Phase 3 needs testing + iteration | Open | Owner | PR #8 and #9 need merge + live testing. Breadcrumbs, caching, rate limit display need verification on device |
-
----
-
-## PR Workflow — IMPORTANT
-
-> **DO NOT create a PR until the owner explicitly confirms a phase is 100% done.**
-
-1. Work on code locally / in the agent filesystem during development
-2. Iterate with the owner — they will review, request changes, test, etc.
-3. Only when the owner says the phase work is **100% complete**, create a PR with all changes for that phase
-4. PR title format: `feat: phase N — <short description>`
-5. PR body should include: what was built, files changed, and the updated PROGRESS.md showing ✅ for completed tasks
-6. Multiple phases can be bundled into one PR if the owner confirms them together
-
-**When the owner confirms a phase is 100% done, the PR must include:**
-1. All source code for the phase
-2. Updated `PROGRESS.md` — mark completed tasks ✅, add notes on what was built
-3. Updated `DEV_SPEC.md` — reflect the **actual** state of the app, not just the plan. If implementation diverged from the spec (different component names, changed APIs, new patterns), update the spec to match reality. The spec should always be a living, accurate document.
-
-**This rule exists because:** The owner iterates and refines before merging. Premature PRs create noise and require force-pushes or multiple PRs for the same work. Keeping docs in sync ensures any agent can pick up the project at any time.
-
----
-
-## How to Continue This Project
-
-1. **Read `DEV_SPEC.md`** — it is the single source of truth for all technical decisions
-2. **Check this file** for current status — find the first ⬜ phase and start there
-3. **Read the PR Workflow section above** — do NOT create PRs until the owner confirms phase completion
-4. **Update this file** after completing tasks — change ⬜ → ✅ and add notes
-5. **Test incrementally** — each phase should produce a working (if incomplete) app
 
 ---
 
