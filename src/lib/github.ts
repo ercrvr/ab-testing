@@ -3,30 +3,6 @@ import { cacheGetEntry, cacheSet, cacheRefresh, TTL } from './cache';
 
 let octokitInstance: Octokit | null = null;
 
-export function initOctokit(token: string): void {
-  octokitInstance = new Octokit({ auth: token });
-}
-
-export function clearOctokit(): void {
-  octokitInstance = null;
-}
-
-export function getOctokit(): Octokit {
-  if (!octokitInstance) throw new Error('Octokit not initialized. Please log in.');
-  return octokitInstance;
-}
-
-// ── Types ──
-
-export interface GitHubTreeEntry {
-  path: string;
-  mode: string;
-  type: string;
-  sha: string;
-  size?: number;
-  url: string;
-}
-
 // ── Rate Limit Tracking ──
 
 export interface RateLimitInfo {
@@ -98,9 +74,57 @@ function updateRateLimit(headers: Record<string, string | undefined>): void {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function headersRecord(h: any): Record<string, string | undefined> {
-  return h as Record<string, string | undefined>;
+/**
+ * Custom fetch wrapper that captures rate limit headers from EVERY response,
+ * including 304 Not Modified. Octokit throws an error for 304 responses before
+ * we can read headers, so intercepting at the fetch level ensures accurate
+ * rate limit tracking regardless of HTTP status.
+ */
+function createRateLimitAwareFetch(): typeof globalThis.fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const response = await globalThis.fetch(input, init);
+
+    const remaining = response.headers.get('x-ratelimit-remaining') ?? undefined;
+    const limit = response.headers.get('x-ratelimit-limit') ?? undefined;
+    const reset = response.headers.get('x-ratelimit-reset') ?? undefined;
+
+    if (remaining != null) {
+      updateRateLimit({
+        'x-ratelimit-remaining': remaining,
+        'x-ratelimit-limit': limit,
+        'x-ratelimit-reset': reset,
+      });
+    }
+
+    return response;
+  };
+}
+
+export function initOctokit(token: string): void {
+  octokitInstance = new Octokit({
+    auth: token,
+    request: { fetch: createRateLimitAwareFetch() },
+  });
+}
+
+export function clearOctokit(): void {
+  octokitInstance = null;
+}
+
+export function getOctokit(): Octokit {
+  if (!octokitInstance) throw new Error('Octokit not initialized. Please log in.');
+  return octokitInstance;
+}
+
+// ── Types ──
+
+export interface GitHubTreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+  sha: string;
+  size?: number;
+  url: string;
 }
 
 // ── Data Source Tracking ──
@@ -143,7 +167,7 @@ export async function listUserRepos(page = 1, perPage = 30) {
     per_page: perPage,
     page,
   });
-  updateRateLimit(headersRecord(resp.headers));
+  // Rate limit already captured by fetch wrapper
   reportDataSource('api');
   return resp.data;
 }
@@ -166,16 +190,16 @@ export async function getRepo(owner: string, repo: string) {
   try {
     const octokit = getOctokit();
     const resp = await octokit.rest.repos.get({ owner, repo, headers });
-    updateRateLimit(headersRecord(resp.headers));
+    // Rate limit already captured by fetch wrapper
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     cacheSet(key, resp.data, TTL.REPO_LIST, etag);
     reportDataSource('api');
     return resp.data;
   } catch (err: unknown) {
-    const e = err as { status?: number; response?: { headers?: Record<string, string> } };
+    const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -217,17 +241,17 @@ export async function getRepoTree(
       recursive: '1',
       headers,
     });
-    updateRateLimit(headersRecord(resp.headers));
+    // Rate limit already captured by fetch wrapper
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     const tree = resp.data.tree as GitHubTreeEntry[];
     cacheSet(key, tree, TTL.REPO_TREE, etag);
     reportDataSource('api');
     return tree;
   } catch (err: unknown) {
-    const e = err as { status?: number; response?: { headers?: Record<string, string> } };
+    const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -267,7 +291,7 @@ export async function getFileContent(
       path,
       headers: reqHeaders,
     });
-    updateRateLimit(headersRecord(resp.headers));
+    // Rate limit already captured by fetch wrapper
 
     const data = resp.data;
     if (!Array.isArray(data) && 'content' in data && typeof data.content === 'string') {
@@ -281,10 +305,10 @@ export async function getFileContent(
     }
     throw new Error(`Could not read file: ${path}`);
   } catch (err: unknown) {
-    const e = err as { status?: number; response?: { headers?: Record<string, string> } };
+    const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      if (e.response?.headers) updateRateLimit(headersRecord(e.response.headers));
+      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -302,8 +326,8 @@ export async function getFileContent(
  */
 export async function fetchRateLimit(): Promise<RateLimitInfo> {
   const octokit = getOctokit();
-  const { data, headers } = await octokit.rest.rateLimit.get();
-  updateRateLimit(headersRecord(headers));
+  const { data } = await octokit.rest.rateLimit.get();
+  // Rate limit headers already captured by fetch wrapper, but also read from body
   rateLimitInfo = {
     remaining: data.rate.remaining,
     limit: data.rate.limit,
