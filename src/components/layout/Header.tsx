@@ -87,7 +87,7 @@ export function Header() {
               <Gauge className="w-3.5 h-3.5" />
               <span>{rateLimit.remaining.toLocaleString()}</span>
               {rateLimit.resetInMinutes != null && (
-                <span className="text-base-content/30 text-[0.65rem]">\u00b7 {rateLimit.resetInMinutes}m</span>
+                <span className="text-base-content/30 text-[0.65rem]">{"\u00b7"} {rateLimit.resetInMinutes}m</span>
               )}
             </div>
           )}
