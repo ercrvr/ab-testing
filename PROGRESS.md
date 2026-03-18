@@ -1,7 +1,7 @@
 # A/B Testing Dashboard — Progress Tracker
 
 > **Last Updated:** 2026-03-18
-> **Current Phase:** Pre-implementation
+> **Current Phase:** Phase 1 Complete → Starting Phase 2
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -41,14 +41,15 @@
 ### Phase 1: Project Scaffold
 | Task | Status | Notes |
 |---|---|---|
-| Initialize Vite + React + TypeScript project | ⬜ | `npm create vite@latest` |
-| Install dependencies (see Dev Spec §2) | ⬜ | react-router-dom, @octokit/rest, react-markdown, remark-gfm, shiki, diff, lucide-react |
-| Configure Tailwind v4 + DaisyUI v5 | ⬜ | CSS-based config, no tailwind.config.js |
-| Set up `index.css` with theme | ⬜ | Dark/light mode, custom theme tokens |
-| Create directory structure (see Dev Spec §3) | ⬜ | src/lib, hooks, context, pages, components |
-| Configure Vite for hash routing + GitHub Pages base | ⬜ | `base: '/ab-testing/'` |
-| Set up GitHub Actions deploy workflow | ⬜ | `.github/workflows/deploy.yml` |
-| Verify blank app deploys to GitHub Pages | ⬜ | |
+| Initialize Vite + React + TypeScript project | ✅ | Vite 8 + React 19 + TypeScript 5.9 |
+| Install dependencies (see Dev Spec §2) | ✅ | react-router-dom 7, lucide-react, @tailwindcss/vite — remaining deps (octokit, shiki, etc.) deferred to phases that need them |
+| Configure Tailwind v4 + DaisyUI v5 | ✅ | CSS-based config via `@import "tailwindcss"` + `@plugin "daisyui"` |
+| Set up `index.css` with theme | ✅ | Lab typography: Space Grotesk (headings), Inter (body), JetBrains Mono (labels). Custom diff colors. `.lab-label` utility class |
+| Create directory structure (see Dev Spec §3) | ✅ | src/lib, hooks, context, pages, components/layout, components/ui — 20 source files |
+| Configure Vite for hash routing + GitHub Pages base | ✅ | `base: '/ab-testing/'`, HashRouter in App.tsx |
+| Set up GitHub Actions deploy workflow | ✅ | `.github/workflows/deploy.yml` with Node 20 + npm ci + build + Pages deploy |
+| Verify blank app deploys to GitHub Pages | ⬜ | Deferred to first PR merge — will verify after this PR lands |
+| Lab-style typography and branding | ✅ | Space Grotesk headings, monospace labels, LAB badge, backdrop blur header, animated pulse dot, feature pills |
 
 ---
 
@@ -91,7 +92,7 @@
 | Task | Status | Notes |
 |---|---|---|
 | `ImageRenderer.tsx` | ⬜ | Display + lightbox |
-| `ImageSlider.tsx` | ⬜ | Overlay slider for image pair comparison |
+| `ImageSlider.tsx` | ⬜ | Overlay slider comparison (pick any 2 variants) |
 | `MarkdownRenderer.tsx` | ⬜ | react-markdown + remark-gfm |
 | `CodeRenderer.tsx` | ⬜ | Shiki syntax highlighting |
 | `DiffRenderer.tsx` | ⬜ | Side-by-side + unified diff |
@@ -109,10 +110,11 @@
 | Task | Status | Notes |
 |---|---|---|
 | Implement `lib/diff.ts` | ⬜ | Line diff, word diff, JSON structural diff |
-| Implement file matching algorithm | ⬜ | See Dev Spec §10: exact path → name+ext → stem → manual |
-| Build `FilePairView.tsx` | ⬜ | Routes matched pairs to correct renderer |
-| Build `UnmatchedFiles.tsx` | ⬜ | "Only in variant A / variant B" sections |
-| Build `ResultsNarrative.tsx` | ⬜ | Side-by-side results.md rendering |
+| Implement file matching algorithm | ⬜ | See Dev Spec §10: N-variant exact path matching |
+| Build `FileGroupView.tsx` | ⬜ | Routes matched file groups to correct renderer (N-variant grid) |
+| Build `FullscreenModal.tsx` | ⬜ | Fullscreen popup for viewing content at full size |
+| Build `UnmatchedFiles.tsx` | ⬜ | "Only in {variant}" sections per variant |
+| Build `ResultsNarrative.tsx` | ⬜ | Grid of results.md rendering (one per variant) |
 | Build `TestComparison.tsx` page | ⬜ | Full comparison view — the main event |
 
 ---
@@ -163,10 +165,53 @@
 
 ---
 
+## PR Workflow — IMPORTANT
+
+> **DO NOT create a PR until the owner explicitly confirms a phase is 100% done.**
+
+1. Work on code locally / in the agent filesystem during development
+2. Iterate with the owner — they will review, request changes, test, etc.
+3. Only when the owner says the phase work is **100% complete**, create a PR with all changes for that phase
+4. PR title format: `feat: phase N — <short description>`
+5. PR body should include: what was built, files changed, and the updated PROGRESS.md showing ✅ for completed tasks
+6. Multiple phases can be bundled into one PR if the owner confirms them together
+
+**When the owner confirms a phase is 100% done, the PR must include:**
+1. All source code for the phase
+2. Updated `PROGRESS.md` — mark completed tasks ✅, add notes on what was built
+3. Updated `DEV_SPEC.md` — reflect the **actual** state of the app, not just the plan. If implementation diverged from the spec (different component names, changed APIs, new patterns), update the spec to match reality. The spec should always be a living, accurate document.
+
+**This rule exists because:** The owner iterates and refines before merging. Premature PRs create noise and require force-pushes or multiple PRs for the same work. Keeping docs in sync ensures any agent can pick up the project at any time.
+
+---
+
 ## How to Continue This Project
 
 1. **Read `DEV_SPEC.md`** — it is the single source of truth for all technical decisions
 2. **Check this file** for current status — find the first ⬜ phase and start there
-3. **Update this file** after completing tasks — change ⬜ → ✅ and add notes
-4. **Push changes via PR** — keep the main branch clean
+3. **Read the PR Workflow section above** — do NOT create PRs until the owner confirms phase completion
+4. **Update this file** after completing tasks — change ⬜ → ✅ and add notes
 5. **Test incrementally** — each phase should produce a working (if incomplete) app
+
+---
+
+## Change Log
+
+### 2026-03-18: Phase 1 Complete
+- Vite 8 + React 19 + TypeScript 5.9 + Tailwind 4.2 + DaisyUI 5.5 scaffold
+- Lab-style branding: Space Grotesk, Inter, JetBrains Mono fonts
+- Header with LAB badge, backdrop blur, theme toggle
+- Landing page with animated status dot, feature pills
+- 5 page shells (Landing, RepoSelector, ProjectList, ProjectView, TestComparison)
+- UI components: ThemeToggle, DifficultyBadge, ErrorBanner, LoadingSpinner, StatCard
+- GitHub Actions deploy workflow
+- Cloudflare Worker OAuth proxy template
+- Build passes: 341KB JS + 50KB CSS (gzipped: 96KB + 9KB)
+
+### 2026-03-18: Dynamic Variants
+- Changed from fixed `with-skill` / `without-skill` variants to dynamic N-variant support
+- Any subdirectory under a test is now treated as a variant
+- Updated `meta.json` schema with generic `variants` map
+- `FilePair` → `FileGroup` (supports N variants)
+- Comparison view changed from 2-column to responsive grid with fullscreen popup
+- Updated: DEV_SPEC.md, AB_TEST_GUIDE.md, types.ts

@@ -1,8 +1,8 @@
 # A/B Testing Dashboard — Developer Specification
 
-> **Version:** 1.0
+> **Version:** 1.1
 > **Last Updated:** 2026-03-18
-> **Status:** Pre-implementation
+> **Status:** Phase 1 Complete (Scaffold)
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -63,20 +63,30 @@ Authenticate → Select Repo → Browse Projects → Browse Tests → Compare Va
 
 ## 2. Tech Stack
 
-| Layer | Package | Version | Purpose |
-|---|---|---|---|
-| Framework | `react` | ^18.x | UI framework |
-| Language | `typescript` | ^5.x | Type safety |
-| Build Tool | `vite` | ^6.x | Dev server + production builds |
-| Styling | `tailwindcss` | ^4.x | Utility-first CSS |
-| Component Library | `daisyui` | ^5.x | Pre-built Tailwind components |
-| Routing | `react-router-dom` | ^7.x | Client-side routing (hash mode) |
-| GitHub API | `@octokit/rest` | ^21.x | Official GitHub REST API client |
-| Markdown | `react-markdown` | ^9.x | Render `.md` files |
-| Markdown Plugins | `remark-gfm` | ^4.x | GitHub Flavored Markdown (tables, strikethrough, etc.) |
-| Syntax Highlighting | `shiki` | ^1.x | Code syntax highlighting for diffs and code viewers |
-| Diff Engine | `diff` | ^7.x | Line-level and word-level text diffing |
-| Icons | `lucide-react` | ^0.400+ | Icon set |
+| Layer | Package | Version | Purpose | Installed |
+|---|---|---|---|---|
+| Framework | `react` | ^19.x | UI framework | ✅ Phase 1 |
+| Language | `typescript` | ~5.9 | Type safety | ✅ Phase 1 |
+| Build Tool | `vite` | ^8.x | Dev server + production builds | ✅ Phase 1 |
+| Styling | `tailwindcss` | ^4.2 | Utility-first CSS | ✅ Phase 1 |
+| Component Library | `daisyui` | ^5.5 | Pre-built Tailwind components | ✅ Phase 1 |
+| Routing | `react-router-dom` | ^7.x | Client-side routing (hash mode) | ✅ Phase 1 |
+| Icons | `lucide-react` | ^0.400+ | Icon set | ✅ Phase 1 |
+| GitHub API | `@octokit/rest` | ^21.x | Official GitHub REST API client | Phase 3 |
+| Markdown | `react-markdown` | ^9.x | Render `.md` files | Phase 4 |
+| Markdown Plugins | `remark-gfm` | ^4.x | GitHub Flavored Markdown (tables, strikethrough, etc.) | Phase 4 |
+| Syntax Highlighting | `shiki` | ^1.x | Code syntax highlighting for diffs and code viewers | Phase 4 |
+| Diff Engine | `diff` | ^7.x | Line-level and word-level text diffing | Phase 5 |
+
+### Typography
+
+| Font | Usage | Source |
+|---|---|---|
+| **Space Grotesk** | Headings (h1–h6, `.font-heading`) | Google Fonts |
+| **Inter** | Body text (`--font-sans`) | Google Fonts |
+| **JetBrains Mono** | Labels, badges, monospace (`.lab-label`, `--font-mono`) | Google Fonts |
+
+The `.lab-label` CSS utility class applies: JetBrains Mono, 0.7rem, weight 500, 0.1em letter-spacing, uppercase. Used for status labels, badges, and instrument-style readouts.
 
 ### Why These Choices
 
@@ -138,7 +148,7 @@ ercrvr/ab-testing/
 │       │
 │       ├── renderers/
 │       │   ├── ImageRenderer.tsx         # Image display + lightbox on click
-│       │   ├── ImageSlider.tsx           # Overlay comparison slider for image pairs
+│       │   ├── ImageSlider.tsx           # Overlay comparison slider (pick any 2 variants)
 │       │   ├── MarkdownRenderer.tsx      # Rendered markdown via react-markdown
 │       │   ├── CodeRenderer.tsx          # Syntax-highlighted code block via Shiki
 │       │   ├── DiffRenderer.tsx          # Side-by-side or unified diff view
@@ -151,9 +161,10 @@ ercrvr/ab-testing/
 │       │   └── BinaryInfo.tsx            # Fallback: metadata + download link
 │       │
 │       ├── comparison/
-│       │   ├── FilePairView.tsx          # Renders a matched pair with the right renderer
-│       │   ├── UnmatchedFiles.tsx        # Lists files unique to one variant
-│       │   └── ResultsNarrative.tsx      # Side-by-side results.md rendering
+│       │   ├── FileGroupView.tsx         # Renders a matched file group (N variants) with the right renderer
+│       │   ├── UnmatchedFiles.tsx        # Lists files unique to specific variants
+│       │   ├── ResultsNarrative.tsx      # Grid of results.md rendering (one per variant)
+│       │   └── FullscreenModal.tsx       # Fullscreen popup for viewing content at full size
 │       │
 │       ├── cards/
 │       │   ├── ProjectCard.tsx           # Project summary card for the grid
@@ -182,7 +193,7 @@ ercrvr/ab-testing/
 
 ### Test Data Directory Convention
 
-Defined in detail in [AB_TEST_GUIDE.md](https://github.com/ercrvr/ab-testing/blob/docs/structure-guide/AB_TEST_GUIDE.md). Summary:
+Defined in detail in [AB_TEST_GUIDE.md](https://github.com/ercrvr/ab-testing/blob/main/AB_TEST_GUIDE.md). Summary:
 
 ```
 {repo-root}/
@@ -190,13 +201,18 @@ Defined in detail in [AB_TEST_GUIDE.md](https://github.com/ercrvr/ab-testing/blo
 │   └── tests/
 │       └── testN/
 │           ├── meta.json
-│           ├── with-skill/
+│           ├── variant-a/
 │           │   ├── results.md
 │           │   └── ...outputs
-│           └── without-skill/
+│           ├── variant-b/
+│           │   ├── results.md
+│           │   └── ...outputs
+│           └── variant-c/      ← as many variants as needed
 │               ├── results.md
 │               └── ...outputs
 ```
+
+**Dynamic variants:** Any subdirectory under a `testN/` directory (excluding `meta.json` at the test root) is treated as a variant. Variant names are user-defined (e.g., `with-skill`, `without-skill`, `baseline`, `gpt4o`, `claude`, `v1`, `v2`).
 
 ### TypeScript Types (`src/types.ts`)
 
@@ -240,20 +256,27 @@ export interface Project {
   lastUpdated?: string;
 }
 
+// ─── Variant Metadata ───────────────────────────────────
+
+export interface VariantMeta {
+  description?: string;
+  highlights?: string[];
+  issues?: string[];
+  notes?: string[];
+  [key: string]: unknown;
+}
+
 // ─── Test ───────────────────────────────────────────────
 
 export interface TestMeta {
   name: string;
   prompt: string;
   difficulty: 'Simple' | 'Medium' | 'Complex';
-  withSkill: {
-    highlights: string[];
-    skillSteps: string[];
-  };
-  withoutSkill: {
-    highlights: string[];
-    issues: string[];
-  };
+  context?: string;
+  tags?: string[];
+  date?: string;
+  variants?: Record<string, VariantMeta>;
+  [key: string]: unknown;
 }
 
 export interface TestSummary {
@@ -263,12 +286,20 @@ export interface TestSummary {
   meta: TestMeta;
 }
 
-export interface TestDetail extends TestSummary {
-  withSkillFiles: DiscoveredFile[];
-  withoutSkillFiles: DiscoveredFile[];
-  matchedPairs: FilePair[];
-  unmatchedWithSkill: DiscoveredFile[];
-  unmatchedWithoutSkill: DiscoveredFile[];
+export interface VariantData {
+  name: string;            // variant directory name, e.g., "with-skill", "baseline"
+  path: string;            // repo path, e.g., "icon-generation/tests/test1/with-skill"
+  resultsMarkdown: string | null;  // content of results.md if present
+  files: DiscoveredFile[];
+}
+
+export interface TestDetail {
+  id: string;
+  name: string;
+  meta: TestMeta;
+  variants: VariantData[];
+  matchedFiles: FileGroup[];
+  unmatchedFiles: Record<string, DiscoveredFile[]>;  // variant name → unmatched files
 }
 
 // ─── Files ──────────────────────────────────────────────
@@ -283,12 +314,11 @@ export interface DiscoveredFile {
   contentType: ContentType;
 }
 
-export interface FilePair {
+export interface FileGroup {
   relativePath: string;    // the matched path, e.g., "settings.svg"
-  withSkill: DiscoveredFile;
-  withoutSkill: DiscoveredFile;
   contentType: ContentType;
-  matchType: 'exact' | 'fuzzy';
+  files: Record<string, DiscoveredFile>;  // variant name → file (variants missing the file are absent)
+  matchType: 'exact';
 }
 
 // ─── Content Types ──────────────────────────────────────
@@ -330,11 +360,13 @@ GET /repos/{owner}/{repo}/contents/{project}/tests/
 
 Stage 3: Load Test Detail (per test, on navigation)
 ────────────────────────────────────────────────────
-GET /repos/{owner}/{repo}/contents/{project}/tests/{testDir}/with-skill/
-    → Recursively list all files → DiscoveredFile[]
-GET /repos/{owner}/{repo}/contents/{project}/tests/{testDir}/without-skill/
-    → Recursively list all files → DiscoveredFile[]
-→ Run file matching algorithm → TestDetail
+GET /repos/{owner}/{repo}/contents/{project}/tests/{testDir}/
+    → List all entries
+    → For each subdirectory entry (excluding meta.json) → this is a variant
+    → For each variant directory:
+        GET /repos/{owner}/{repo}/contents/{project}/tests/{testDir}/{variantName}/
+        → Recursively list all files → VariantData
+→ Run file matching algorithm across ALL variants → TestDetail
 
 Stage 4: Fetch File Content (per file, on demand)
 ──────────────────────────────────────────────────
@@ -343,7 +375,7 @@ GET raw content via downloadUrl (for text files)
 Use downloadUrl directly as <img src> / <embed src> (for binary files)
 ```
 
-**Important:** Stage 4 content is fetched lazily — only when the user scrolls a file pair into view or expands it. Never prefetch all file contents.
+**Important:** Stage 4 content is fetched lazily — only when the user scrolls a file group into view or expands it. Never prefetch all file contents.
 
 ---
 
@@ -600,7 +632,7 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 
 ### 7.5 Test Comparison (`TestComparison.tsx`)
 
-**Purpose:** The core feature. Side-by-side comparison of test variants.
+**Purpose:** The core feature. Comparison of test variants in a responsive grid layout.
 
 **Layout:**
 ```
@@ -615,43 +647,37 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 │  │ suitable for use as a favicon and in-app icon..."          │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
-│  ┌─ Section B: Results Narrative ─────────────────────────────┐ │
+│  ┌─ Section B: Results Narrative (responsive grid) ───────────┐ │
 │  │                                                            │ │
-│  │  With Skill              │  Without Skill                  │ │
-│  │  ────────────             │  ──────────────                │ │
-│  │  (rendered results.md)   │  (rendered results.md)          │ │
-│  │                          │                                 │ │
+│  │  Variant A           │  Variant B          │  Variant C    │ │
+│  │  ────────────         │  ────────────       │  ──────────  │ │
+│  │  (results.md)        │  (results.md)       │  (results.md) │ │
+│  │                      │                     │               │ │
 │  │                                              [Collapse ▲]  │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
-│  ┌─ Section C: Highlights ────────────────────────────────────┐ │
+│  ┌─ Section C: Variant Highlights (from meta.json) ──────────┐ │
 │  │                                                            │ │
-│  │  ✅ With Skill Highlights    │  ⚠️ Without Skill Issues    │ │
-│  │  • Clean SVG with viewBox   │  • Complex paths blur small │ │
-│  │  • currentColor theming     │  • No accessibility attrs   │ │
-│  │  • ARIA attributes          │  • Unnecessary PNGs         │ │
+│  │  Variant A              │  Variant B          │ Variant C  │ │
+│  │  ✅ Highlights          │  ⚠️ Issues          │ 📝 Notes   │ │
+│  │  • Clean SVG            │  • Complex paths    │ • Fast     │ │
+│  │  • currentColor         │  • No a11y attrs    │ • Simple   │ │
 │  │                                                            │ │
-│  │  📋 Skill Steps                                            │ │
-│  │  1. Designed at 24x24 base                                 │ │
-│  │  2. Used stroke-based design                               │ │
-│  │  3. Added ARIA attributes                                  │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
-│  ┌─ Section D: File Comparison ───────────────────────────────┐ │
+│  ┌─ Section D: File Comparison (responsive grid) ────────────┐ │
 │  │                                                            │ │
-│  │  Matched Files (3 pairs)                                   │ │
+│  │  Matched Files (3 groups)                                  │ │
 │  │  ┌──────────────────────────────────────────────────┐      │ │
 │  │  │ settings.svg                                     │      │ │
 │  │  │                                                  │      │ │
-│  │  │  [With Skill]        │  [Without Skill]          │      │ │
-│  │  │  (rendered SVG)      │  (rendered SVG)           │      │ │
-│  │  │                      │                           │      │ │
-│  │  │  943 B               │  2.1 KB                   │      │ │
+│  │  │  [Variant A] 🔍  │  [Variant B] 🔍  │ [C] 🔍    │      │ │
+│  │  │  (rendered)       │  (rendered)       │ (render)  │      │ │
+│  │  │  943 B            │  2.1 KB           │ 1.5 KB   │      │ │
 │  │  │                                                  │      │ │
-│  │  │         [ 🔀 Slider ] [ 📝 Code Diff ]           │      │ │
 │  │  └──────────────────────────────────────────────────┘      │ │
 │  │                                                            │ │
-│  │  Only in without-skill (4 files)                           │ │
+│  │  Only in Variant B (4 files)                               │ │
 │  │  ┌──────────────────────────────────────────────────┐      │ │
 │  │  │ settings-filled.svg    946 B   [Preview]         │      │ │
 │  │  │ png/settings-128.png   9.0 KB  [Preview]         │      │ │
@@ -664,13 +690,26 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+**Grid Layout:**
+- Outputs are rendered as a responsive grid: one column per variant
+- 2 variants = 2 columns, 3 variants = 3 columns, 4+ variants wraps to next row
+- Each grid cell is clickable → opens a **fullscreen popup/modal** with the content rendered at full size
+- A 🔍 icon on each cell indicates clickable fullscreen capability
+
+**Fullscreen Popup:**
+- Opens when any grid cell is clicked
+- Dark overlay with centered content at full viewport size
+- Shows the variant name as a header
+- Close via X button, Escape key, or click outside
+- Navigation arrows (←/→) to step through variants while popup is open
+
 **Behavior:**
-- On mount, run discovery Stage 3: list files in both variants, run matching
-- Fetch `results.md` content for both variants immediately (they're small)
-- Fetch file content for matched pairs lazily (on scroll or expand)
+- On mount, run discovery Stage 3: list all variant subdirectories, recursively list their files, run matching
+- Fetch `results.md` content for all variants immediately (they're small)
+- Fetch file content for matched groups lazily (on scroll or expand)
 - Previous/Next navigation links to sibling tests
 - Section B (Results Narrative) is collapsible, expanded by default
-- Section C (Highlights) is always visible — these are the quick-glance takeaways from meta.json
+- Section C (Highlights) displays highlights, issues, notes, and description from each variant's `meta.json` entry (if present)
 
 ---
 
@@ -751,7 +790,7 @@ Clickable card/row. Shows test name, difficulty badge, truncated prompt. Links t
 
 ## 9. Content Renderers
 
-All renderers accept content as a `string` (text-based files) or a `url` (binary files). Each renderer handles both single-file preview and side-by-side comparison modes.
+All renderers accept content as a `string` (text-based files) or a `url` (binary files). Each renderer handles both single-file preview and grid comparison mode (N variants displayed in a responsive grid, one column per variant). Clicking any rendered item opens it in the FullscreenModal at full size.
 
 ### 9.1 Extension → ContentType Mapping (`lib/content-type.ts`)
 
@@ -820,13 +859,14 @@ export function getShikiLanguage(ext: string): string {
 #### ImageRenderer
 
 - **Input:** `url` (raw GitHub URL)
-- **Single mode:** Render `<img>` with max-height constraint, click opens Lightbox
-- **Comparison mode:** Side-by-side images. Below each: file size, dimensions (load via Image API). Toggle button to switch to ImageSlider (overlay mode).
+- **Single mode:** Render `<img>` with max-height constraint, click opens FullscreenModal
+- **Grid mode:** One image per variant column. Below each: file size, dimensions (load via Image API). Click any image to open in FullscreenModal. An optional toggle switches to ImageSlider (overlay mode) — user picks which 2 variants to compare.
 
 #### ImageSlider
 
-- **Input:** `leftUrl`, `rightUrl`, `leftLabel`, `rightLabel`
-- **Renders:** Both images stacked with a draggable vertical divider. Left image clips at divider position. Labels on each side.
+- **Input:** `variants: Record<string, string>` (variant name → image URL), `selectedPair: [string, string]` (currently selected variant names)
+- **Renders:** Two selected images stacked with a draggable vertical divider. Left image clips at divider position. Labels on each side.
+- **Variant selector:** Dropdown to pick which 2 variants to compare. Defaults to first two. Always available regardless of total variant count.
 - **Implementation:** CSS `clip-path` or `overflow: hidden` on a container. Divider is a draggable `<div>`.
 
 #### MarkdownRenderer
@@ -834,7 +874,7 @@ export function getShikiLanguage(ext: string): string {
 - **Input:** `content` (raw markdown string)
 - **Uses:** `react-markdown` with `remark-gfm` plugin
 - **Styling:** Apply DaisyUI `prose` class for typography. Ensure code blocks within markdown are syntax-highlighted (use Shiki or rehype-highlight).
-- **Comparison mode:** Rendered side-by-side. Toggle to "Source Diff" switches to DiffRenderer showing raw markdown.
+- **Grid mode:** One rendered column per variant. Toggle to "Source" switches to raw markdown view (syntax-highlighted). Click any variant to open in FullscreenModal.
 
 #### CodeRenderer
 
@@ -844,36 +884,28 @@ export function getShikiLanguage(ext: string): string {
 
 #### DiffRenderer
 
-- **Input:** `leftContent`, `rightContent`, `language` (optional)
+- **Input:** `contents: Record<string, string>` (variant name → content), `language` (optional)
 - **Uses `diff` package:** `diffLines()` for line-level diff
-- **Renders:** Split view (two columns) with:
-  - Line numbers on each side
-  - Green background for added lines (right)
-  - Red background for removed lines (left)
-  - Gray for unchanged context lines
-  - Syntax highlighting on top of diff coloring (if language provided)
-- **Toggle:** Unified vs split view
+- **Grid mode:** Syntax-highlighted code blocks (one per variant column) with line numbers. Click any to open in FullscreenModal.
+- **Scrollable:** Each code block is independently scrollable with a max-height constraint.
 
 #### JsonDiff
 
-- **Input:** `leftJson`, `rightJson` (both as strings)
-- **Renders:** A collapsible tree view. Each node shows:
-  - Key name
-  - Value (with type coloring: strings in green, numbers in blue, booleans in purple)
-  - Diff status: added (green bg), removed (red bg), changed (yellow bg), unchanged (no bg)
-- **Implementation:** Parse both JSON strings, recursively compare, render tree with indentation. Use `<details>` for collapsible nodes or custom toggle.
+- **Input:** `jsonContents: Record<string, string>` (variant name → JSON string)
+- **Grid mode:** Formatted JSON views (one per variant column) with collapsible tree nodes. Color-coded values: strings in green, numbers in blue, booleans in purple. Click any to open in FullscreenModal.
+- **Implementation:** Parse JSON strings, recursively compare, render tree with indentation. Use `<details>` for collapsible nodes or custom toggle.
 
 #### CsvTable
 
-- **Input:** `leftCsv`, `rightCsv` (both as strings)
-- **Renders:** Two tables side-by-side. Parse CSV into rows/columns. Highlight cells that differ between left and right.
-- **Implementation:** Split by newlines, then by commas (handle quoted values). Compare cell-by-cell.
+- **Input:** `csvContents: Record<string, string>` (variant name → CSV string)
+- **Renders:** One table per variant in a grid layout. Parse CSV into rows/columns. Click any table to open in FullscreenModal.
+- **Implementation:** Split by newlines, then by commas (handle quoted values). Scrollable with sticky headers.
 
 #### PdfViewer
 
 - **Input:** `url` (raw GitHub URL)
 - **Renders:** `<embed src={url} type="application/pdf" />` or `<iframe>` fallback
-- **Comparison mode:** Two embeds side-by-side
+- **Grid mode:** One embed per variant column. Click to open in FullscreenModal for full-size viewing.
 
 #### HtmlPreview
 
@@ -885,7 +917,7 @@ export function getShikiLanguage(ext: string): string {
 
 - **Input:** `url` (raw GitHub URL)
 - **Renders:** `<audio controls src={url} />` or `<video controls src={url} />`
-- **Comparison mode:** Two players side-by-side with synchronized play (optional: play button syncs both)
+- **Grid mode:** One player per variant column. Optional synchronized playback — a master play/pause/seek control syncs all N variant players simultaneously.
 
 #### BinaryInfo
 
@@ -899,35 +931,39 @@ export function getShikiLanguage(ext: string): string {
 
 Implemented in `src/lib/discovery.ts`.
 
+The algorithm matches files across **all variants** (not just two) by grouping on relative path.
+
 ```typescript
 function matchFiles(
-  withSkillFiles: DiscoveredFile[],
-  withoutSkillFiles: DiscoveredFile[]
+  variants: VariantData[]
 ): {
-  matched: FilePair[];
-  unmatchedWithSkill: DiscoveredFile[];
-  unmatchedWithoutSkill: DiscoveredFile[];
+  matchedFiles: FileGroup[];
+  unmatchedFiles: Record<string, DiscoveredFile[]>;
 } {
-  // Phase 1: Exact path match
-  // ─────────────────────────
-  // For each file in withSkill, look for a file in withoutSkill
-  // with the exact same relative path (case-insensitive).
-  // If found → create FilePair with matchType 'exact'.
-  // Remove matched files from both pools.
+  // Phase 1: Collect all unique relative paths across ALL variants
+  // ──────────────────────────────────────────────────────────────
+  // For each variant, iterate its files and collect relative paths.
+  // Build a map: relativePath → Record<variantName, DiscoveredFile>
 
-  // Phase 2: Remaining unmatched
-  // ────────────────────────────
-  // Files left in either pool after exact matching are unmatched.
-  // Do NOT attempt fuzzy matching — exact path matching is sufficient
-  // and fuzzy matching can produce confusing false matches.
-  // Users should follow the naming convention in AB_TEST_GUIDE.md.
+  // Phase 2: Create FileGroups
+  // ──────────────────────────
+  // For each unique relative path:
+  //   - If the file exists in 2+ variants → create a FileGroup
+  //     with matchType 'exact' and files map containing each variant's file
+  //   - Variants that don't have the file are simply absent from the map
+
+  // Phase 3: Collect unmatched files
+  // ────────────────────────────────
+  // For each unique relative path:
+  //   - If the file exists in only 1 variant → it's unmatched
+  //   - Group unmatched files by variant name: Record<variantName, DiscoveredFile[]>
 
   // Note: results.md is excluded from matching — it's rendered
   // separately in the Results Narrative section.
 }
 ```
 
-**Design decision:** Only exact path matching. Fuzzy matching was considered but rejected — it creates confusion when files are wrongly paired. The guide instructs users to use matching filenames.
+**Design decision:** Only exact path matching. Fuzzy matching was considered but rejected — it creates confusion when files are wrongly paired. The guide instructs users to use matching filenames across variants.
 
 ---
 
@@ -1104,9 +1140,9 @@ Use DaisyUI classes for consistent styling:
 
 ### Responsive Breakpoints
 
-- **Mobile (<768px):** Single column. Comparison stacks vertically (with-skill on top, without-skill below).
-- **Tablet (768-1024px):** Side-by-side comparison with reduced padding.
-- **Desktop (>1024px):** Full side-by-side with comfortable spacing.
+- **Mobile (<768px):** Single column. Variant grid stacks vertically (one variant per row). FullscreenModal is the primary way to inspect content.
+- **Tablet (768-1024px):** 2-column grid for variants with reduced padding. 3+ variants wrap to next row.
+- **Desktop (>1024px):** Full responsive grid — 2 variants = 2 columns, 3 = 3 columns, 4+ wraps with comfortable spacing.
 
 ### Dark Mode
 
@@ -1347,7 +1383,7 @@ A typical user session might look like:
 4. List project contents: 1 call per project
 5. List tests: 1 call per project
 6. Fetch meta.json: 1 call per test
-7. List variant files: 2 calls per test (with + without)
+7. List variant files: 1 call to list test dir + 1 call per variant (N variants per test)
 8. Fetch file content: 1 call per file viewed
 
 **For a repo with 3 projects × 10 tests × 5 files each:**
@@ -1362,7 +1398,7 @@ A typical user session might look like:
    - Parse the flat tree to build the project/test structure client-side
    - **This replaces ~40 discovery API calls with 1 call**
 
-2. **Lazy content loading:** Only fetch file contents when the user navigates to a test and scrolls to a file pair. Use IntersectionObserver for scroll-triggered loading.
+2. **Lazy content loading:** Only fetch file contents when the user navigates to a test and scrolls to a file group. Use IntersectionObserver for scroll-triggered loading.
 
 3. **Image optimization:** Use `loading="lazy"` on all `<img>` tags. For raw GitHub URLs, consider appending a size parameter if supported.
 
@@ -1404,7 +1440,8 @@ Build in this order to ensure each phase is independently testable:
 21. Implement `ImageSlider.tsx`
 22. Implement `CodeRenderer.tsx` (Shiki)
 23. Implement `DiffRenderer.tsx`
-24. Implement `FilePairView.tsx` (content-type routing)
+24. Implement `FileGroupView.tsx` (content-type routing for N-variant grid)
+24b. Implement `FullscreenModal.tsx` (fullscreen popup for content viewing)
 25. Implement `UnmatchedFiles.tsx`
 26. **Checkpoint:** Full comparison view working for images, markdown, code
 
