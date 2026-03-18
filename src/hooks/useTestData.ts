@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TestDetail, UseQueryResult } from '../types';
 import { getRepoTree } from '../lib/github';
-import type { GitHubTreeEntry } from '../lib/github';
 import { loadTestDetail } from '../lib/discovery';
-import { cacheGet, cacheSet, TTL } from '../lib/cache';
 
 export function useTestData(
   owner: string | undefined,
@@ -23,14 +21,8 @@ export function useTestData(
     setError(null);
 
     try {
-      const treeCacheKey = `tree:${owner}/${repo}`;
-      let tree = cacheGet<GitHubTreeEntry[]>(treeCacheKey);
-
-      if (!tree) {
-        tree = await getRepoTree(owner, repo, defaultBranch);
-        cacheSet(treeCacheKey, tree, TTL.REPO_TREE);
-      }
-
+      // getRepoTree handles ETag caching internally
+      const tree = await getRepoTree(owner, repo, defaultBranch);
       const detail = await loadTestDetail(
         tree,
         owner,
