@@ -201,7 +201,6 @@
 3. **Read the PR Workflow section above** — do NOT create PRs until the owner confirms phase completion
 4. **Update this file** after completing tasks — change ⬜ → ✅ and add notes
 5. **Test incrementally** — each phase should produce a working (if incomplete) app
-6. **Doc updates go directly to main** — changes to `PROGRESS.md`, `DEV_SPEC.md`, `AB_TEST_GUIDE.md`, and other docs do not need a PR. Before pushing, **confirm with the owner that `main` is up to date and there are no pending open PRs** that could cause a conflict. Once confirmed, push the doc change directly to `main`. Never bundle doc updates into a feature branch.
 
 ---
 
