@@ -36,12 +36,29 @@ export interface RateLimitInfo {
   lastChecked: number;
 }
 
-let rateLimitInfo: RateLimitInfo = {
-  remaining: 5000,
-  limit: 5000,
-  reset: 0,
-  lastChecked: 0,
-};
+const RATE_LIMIT_STORAGE_KEY = 'ab-rate-limit';
+
+function loadRateLimitFromStorage(): RateLimitInfo {
+  try {
+    const stored = sessionStorage.getItem(RATE_LIMIT_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // ignore
+  }
+  return { remaining: 0, limit: 0, reset: 0, lastChecked: 0 };
+}
+
+function saveRateLimitToStorage(): void {
+  try {
+    sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(rateLimitInfo));
+  } catch {
+    // ignore
+  }
+}
+
+let rateLimitInfo: RateLimitInfo = loadRateLimitFromStorage();
 
 const rateLimitListeners = new Set<() => void>();
 
@@ -76,6 +93,7 @@ function updateRateLimit(headers: Record<string, string | undefined>): void {
   }
   if (changed) {
     rateLimitInfo.lastChecked = Date.now();
+    saveRateLimitToStorage();
     rateLimitListeners.forEach((fn) => fn());
   }
 }
@@ -292,6 +310,7 @@ export async function fetchRateLimit(): Promise<RateLimitInfo> {
     reset: data.rate.reset,
     lastChecked: Date.now(),
   };
+  saveRateLimitToStorage();
   rateLimitListeners.forEach((fn) => fn());
   return { ...rateLimitInfo };
 }
