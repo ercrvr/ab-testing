@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Octokit } from '@octokit/rest';
 import type { AuthState, AuthMethod, GitHubUser } from '../types';
+import { initOctokit, clearOctokit } from '../lib/github';
 
 interface AuthContextValue {
   auth: AuthState;
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token && method) {
       fetchUser(token)
         .then((user) => {
+          initOctokit(token);
           setAuth({ isAuthenticated: true, token, method, user });
         })
         .catch(() => {
@@ -54,12 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (token: string, method: AuthMethod) => {
     const user = await fetchUser(token);
+    initOctokit(token);
     localStorage.setItem(STORAGE_TOKEN_KEY, token);
     localStorage.setItem(STORAGE_METHOD_KEY, method);
     setAuth({ isAuthenticated: true, token, method, user });
   }, []);
 
   const logout = useCallback(() => {
+    clearOctokit();
     localStorage.removeItem(STORAGE_TOKEN_KEY);
     localStorage.removeItem(STORAGE_METHOD_KEY);
     setAuth({ isAuthenticated: false, token: null, method: null, user: null });
