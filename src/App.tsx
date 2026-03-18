@@ -7,6 +7,7 @@ import { RepoSelector } from './pages/RepoSelector';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectView } from './pages/ProjectView';
 import { TestComparison } from './pages/TestComparison';
+import { DebugOverlay } from './components/debug/DebugOverlay';
 import type { ReactNode } from 'react';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -31,6 +32,7 @@ function AppRoutes() {
         </Routes>
       </main>
       <Footer />
+      <DebugOverlay />
     </div>
   );
 }
