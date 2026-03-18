@@ -2,6 +2,7 @@ import { Sun, Moon, LogOut, FlaskConical } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Breadcrumbs } from './Breadcrumbs';
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
@@ -15,14 +16,17 @@ export function Header() {
 
   return (
     <header className="navbar bg-base-200/80 backdrop-blur-md shadow-sm px-4 sticky top-0 z-50 border-b border-base-300/50">
-      <div className="flex-1 gap-2">
-        <FlaskConical className="w-6 h-6 text-primary" />
-        <a href="#/" className="text-lg font-heading font-bold tracking-tight">
-          A/B Testing
+      <div className="flex-1 gap-3">
+        <a href="#/" className="flex items-center gap-2 shrink-0">
+          <FlaskConical className="w-6 h-6 text-primary" />
+          <span className="text-lg font-heading font-bold tracking-tight hidden md:inline">
+            A/B Testing
+          </span>
+          <span className="badge badge-primary badge-xs font-mono text-[0.6rem] tracking-widest uppercase hidden md:inline-flex">
+            Lab
+          </span>
         </a>
-        <span className="badge badge-primary badge-xs font-mono text-[0.6rem] tracking-widest uppercase">
-          Lab
-        </span>
+        {auth.isAuthenticated && <Breadcrumbs />}
       </div>
 
       <div className="flex-none flex items-center gap-2">
