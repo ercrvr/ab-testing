@@ -37,7 +37,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_GITHUB_CLIENT_ID: ${{ vars.GITHUB_CLIENT_ID }}
+          VITE_GITHUB_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
           VITE_OAUTH_PROXY_URL: ${{ vars.OAUTH_PROXY_URL }}
 
       - name: Setup Pages
