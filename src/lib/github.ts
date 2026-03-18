@@ -49,29 +49,45 @@ export function subscribeRateLimit(listener: () => void): () => void {
   };
 }
 
+/**
+ * Update rate limit info from response headers.
+ *
+ * GitHub's load balancers can return headers from different rate-limit windows
+ * across concurrent requests (different backend servers). To prevent the
+ * displayed value from "jumping" we enforce two rules:
+ *   1. Ignore responses from an older window (lower reset timestamp).
+ *   2. Within the same window, remaining can only decrease — never increase.
+ */
 function updateRateLimit(headers: Record<string, string | undefined>): void {
   const remaining = headers['x-ratelimit-remaining'];
   const limit = headers['x-ratelimit-limit'];
   const reset = headers['x-ratelimit-reset'];
 
-  let changed = false;
-  if (remaining != null) {
-    rateLimitInfo.remaining = parseInt(remaining, 10);
-    changed = true;
+  if (remaining == null) return;
+
+  const incomingRemaining = parseInt(remaining, 10);
+  const incomingLimit = limit != null ? parseInt(limit, 10) : rateLimitInfo.limit;
+  const incomingReset = reset != null ? parseInt(reset, 10) : 0;
+
+  // Ignore stale responses from an older rate-limit window
+  if (rateLimitInfo.reset > 0 && incomingReset > 0 && incomingReset < rateLimitInfo.reset) {
+    return;
   }
-  if (limit != null) {
-    rateLimitInfo.limit = parseInt(limit, 10);
-    changed = true;
+
+  if (incomingReset > rateLimitInfo.reset) {
+    // New rate-limit window started — accept all values
+    rateLimitInfo.remaining = incomingRemaining;
+    rateLimitInfo.limit = incomingLimit;
+    rateLimitInfo.reset = incomingReset;
+  } else {
+    // Same window — remaining can only go down (more conservative = more accurate)
+    rateLimitInfo.remaining = Math.min(rateLimitInfo.remaining, incomingRemaining);
+    rateLimitInfo.limit = incomingLimit;
   }
-  if (reset != null) {
-    rateLimitInfo.reset = parseInt(reset, 10);
-    changed = true;
-  }
-  if (changed) {
-    rateLimitInfo.lastChecked = Date.now();
-    saveRateLimitToStorage();
-    rateLimitListeners.forEach((fn) => fn());
-  }
+
+  rateLimitInfo.lastChecked = Date.now();
+  saveRateLimitToStorage();
+  rateLimitListeners.forEach((fn) => fn());
 }
 
 /**
@@ -167,7 +183,6 @@ export async function listUserRepos(page = 1, perPage = 30) {
     per_page: perPage,
     page,
   });
-  // Rate limit already captured by fetch wrapper
   reportDataSource('api');
   return resp.data;
 }
@@ -190,7 +205,6 @@ export async function getRepo(owner: string, repo: string) {
   try {
     const octokit = getOctokit();
     const resp = await octokit.rest.repos.get({ owner, repo, headers });
-    // Rate limit already captured by fetch wrapper
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     cacheSet(key, resp.data, TTL.REPO_LIST, etag);
     reportDataSource('api');
@@ -199,7 +213,6 @@ export async function getRepo(owner: string, repo: string) {
     const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -241,7 +254,6 @@ export async function getRepoTree(
       recursive: '1',
       headers,
     });
-    // Rate limit already captured by fetch wrapper
     const etag = (resp.headers as Record<string, string | undefined>).etag ?? null;
     const tree = resp.data.tree as GitHubTreeEntry[];
     cacheSet(key, tree, TTL.REPO_TREE, etag);
@@ -251,7 +263,6 @@ export async function getRepoTree(
     const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -291,7 +302,6 @@ export async function getFileContent(
       path,
       headers: reqHeaders,
     });
-    // Rate limit already captured by fetch wrapper
 
     const data = resp.data;
     if (!Array.isArray(data) && 'content' in data && typeof data.content === 'string') {
@@ -308,7 +318,6 @@ export async function getFileContent(
     const e = err as { status?: number };
     if (e.status === 304 && entry?.data != null) {
       cacheRefresh(key);
-      // Rate limit already captured by fetch wrapper
       reportDataSource('etag-revalidated');
       return entry.data;
     }
@@ -327,7 +336,6 @@ export async function getFileContent(
 export async function fetchRateLimit(): Promise<RateLimitInfo> {
   const octokit = getOctokit();
   const { data } = await octokit.rest.rateLimit.get();
-  // Rate limit headers already captured by fetch wrapper, but also read from body
   rateLimitInfo = {
     remaining: data.rate.remaining,
     limit: data.rate.limit,
