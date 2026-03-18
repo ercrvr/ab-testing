@@ -82,10 +82,13 @@ export function Header() {
           {auth.isAuthenticated && rateLimit.lastChecked > 0 && (
             <div
               className={`flex items-center gap-1 text-xs font-mono ${rateLimitColor}`}
-              title={`API calls: ${rateLimit.remaining.toLocaleString()} / ${rateLimit.limit.toLocaleString()} remaining`}
+              title={`API calls: ${rateLimit.remaining.toLocaleString()} / ${rateLimit.limit.toLocaleString()} remaining${rateLimit.resetInMinutes != null ? ` \u00b7 resets in ${rateLimit.resetInMinutes}m` : ''}`}
             >
               <Gauge className="w-3.5 h-3.5" />
               <span>{rateLimit.remaining.toLocaleString()}</span>
+              {rateLimit.resetInMinutes != null && (
+                <span className="text-base-content/30 text-[0.65rem]">\u00b7 {rateLimit.resetInMinutes}m</span>
+              )}
             </div>
           )}
 
