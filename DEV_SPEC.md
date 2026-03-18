@@ -2,7 +2,7 @@
 
 > **Version:** 1.1
 > **Last Updated:** 2026-03-18
-> **Status:** Phase 1 Complete (Scaffold)
+> **Status:** Phase 2 Complete (Authentication)
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -123,7 +123,6 @@ ercrvr/ab-testing/
 │   │   └── cache.ts                     # localStorage cache with ETag support
 │   │
 │   ├── hooks/
-│   │   ├── useAuth.ts                   # Auth state: token, user info, login/logout
 │   │   ├── useRepo.ts                   # Selected repo state
 │   │   ├── useProjects.ts               # Project discovery for a repo
 │   │   ├── useTests.ts                  # Test listing for a project
@@ -131,7 +130,7 @@ ercrvr/ab-testing/
 │   │   └── useTheme.ts                  # Dark/light mode state
 │   │
 │   ├── context/
-│   │   └── AuthContext.tsx              # React context provider for auth state
+│   │   └── AuthContext.tsx              # React context provider for auth state + useAuth hook
 │   │
 │   ├── pages/
 │   │   ├── Landing.tsx                  # Auth page: OAuth login + PAT input
@@ -436,6 +435,13 @@ Frontend stores token:
 | `ab-dashboard-user` | JSON string of `GitHubUser` (cached to avoid API call on every load) |
 | `ab-dashboard-selected-repo` | JSON string of `RepoInfo` (last selected repo) |
 
+### Implementation Notes (Phase 2)
+
+- `useAuth` is exported directly from `AuthContext.tsx` — there is no separate `src/hooks/useAuth.ts` file
+- Landing page uses an expandable/collapsible section for PAT input (not always visible)
+- If `VITE_GITHUB_CLIENT_ID` is not configured (empty/undefined), the OAuth button is hidden and PAT form is shown directly
+- OAuth flow includes CSRF protection via a random `state` parameter stored in `sessionStorage`
+
 ### Logout
 
 Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
@@ -479,10 +485,10 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 **Purpose:** Authentication entry point.
 
 **Layout:**
-```
+````
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│                    🔬 A/B Testing Dashboard                     │
+│                    🧪 A/B Testing LAB                           │
 │                                                                 │
 │        Compare AI agent outputs side-by-side with               │
 │        smart, content-aware viewers.                            │
@@ -491,20 +497,21 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 │        │  🔑  Login with GitHub          │  ← Primary button    │
 │        └─────────────────────────────────┘                      │
 │                                                                 │
-│                       ── or ──                                  │
-│                                                                 │
+│        ▸ Use a Personal Access Token instead  ← Expandable      │
 │        ┌─────────────────────────────────┐                      │
-│        │  Enter Personal Access Token    │  ← Text input        │
+│        │  ghp_xxxxxxxxxxxxxxxxxxxx       │  ← Text input        │
 │        └─────────────────────────────────┘                      │
 │        ┌──────────┐                                             │
-│        │ Connect  │  ← Secondary button                         │
+│        │ Connect  │  ← Button with loading state                │
 │        └──────────┘                                             │
 │                                                                 │
-│        ℹ️ Token needs `repo` scope for private repos.           │
-│           How to create a PAT →                                 │
+│        ℹ️ Needs repo scope for private repos.                   │
+│        🔗 Create a PAT → (links to github.com/settings/tokens) │
+│                                                                 │
+│        [Error banner shown inline on auth failure]              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
-```
+````
 
 **Behavior:**
 - "Login with GitHub" → redirects to GitHub OAuth flow
@@ -1194,7 +1201,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build
         run: npm run build
@@ -1410,63 +1417,83 @@ A typical user session might look like:
 
 ## 20. Implementation Order
 
-Build in this order to ensure each phase is independently testable:
+Build in this order. Each phase produces a testable increment.
 
-### Phase 1: Foundation
+### Phase 1: Project Scaffold ✅
 1. Initialize Vite + React + TypeScript project
-2. Install all dependencies
-3. Set up Tailwind v4 + DaisyUI v5 (`index.css`)
-4. Set up HashRouter with all routes (placeholder pages)
-5. Implement `types.ts`
-6. Implement `AuthContext` + `useAuth` hook
-7. Implement `Landing.tsx` with PAT login (skip OAuth for now)
-8. **Checkpoint:** Can log in with a PAT and see the repo selector page
+2. Install core dependencies (react-router-dom, lucide-react, tailwindcss, daisyui)
+3. Configure Tailwind v4 + DaisyUI v5 (`index.css`)
+4. Set up directory structure (src/lib, hooks, context, pages, components)
+5. Create placeholder pages (Landing, RepoSelector, ProjectList, ProjectView, TestComparison)
+6. Configure Vite for hash routing + GitHub Pages base path
+7. Lab-style typography and branding (Space Grotesk, Inter, JetBrains Mono)
+8. GitHub Actions deploy workflow
+9. **Checkpoint:** Blank app deploys to GitHub Pages
 
-### Phase 2: Navigation
-9. Implement `lib/github.ts` (Octokit wrapper)
-10. Implement `Header` + `Breadcrumbs`
-11. Implement `RepoSelector.tsx` with repo listing
-12. Implement `lib/discovery.ts` (Git Trees API approach)
-13. Implement `ProjectList.tsx` with project cards
-14. Implement `ProjectView.tsx` with test cards
-15. **Checkpoint:** Can navigate from repo → projects → tests
+### Phase 2: Authentication ✅
+10. Implement `AuthContext.tsx` (token storage, user state, `useAuth` hook)
+11. Build `Landing.tsx` (OAuth button + expandable PAT form)
+12. Handle OAuth callback (code → token exchange via Cloudflare Worker)
+13. PAT validation (test API call to `GET /user`)
+14. Logout + token clearing
+15. Route guards (ProtectedRoute wrapper, auth redirect)
+16. **Checkpoint:** Can log in via OAuth or PAT, protected routes work
 
-### Phase 3: Core Comparison
-16. Implement file matching algorithm
-17. Implement `TestComparison.tsx` layout (sections A-D)
-18. Implement `ResultsNarrative.tsx` (side-by-side markdown)
-19. Implement `MarkdownRenderer.tsx`
-20. Implement `ImageRenderer.tsx` + `Lightbox.tsx`
-21. Implement `ImageSlider.tsx`
-22. Implement `CodeRenderer.tsx` (Shiki)
-23. Implement `DiffRenderer.tsx`
-24. Implement `FileGroupView.tsx` (content-type routing for N-variant grid)
-24b. Implement `FullscreenModal.tsx` (fullscreen popup for content viewing)
-25. Implement `UnmatchedFiles.tsx`
-26. **Checkpoint:** Full comparison view working for images, markdown, code
+### Phase 3: Core Navigation & Data Discovery
+17. Install `@octokit/rest`
+18. Implement `lib/github.ts` (Octokit wrapper with rate limit handling)
+19. Implement `lib/discovery.ts` (Git Trees API for single-call discovery)
+20. Implement `lib/cache.ts` (localStorage + ETag caching)
+21. Implement data hooks (`useProjects`, `useTests`, `useTestData`)
+22. Build `RepoSelector.tsx` (search/browse repos, recently used)
+23. Build `ProjectList.tsx` (project cards grid)
+24. Build `ProjectView.tsx` (stats + test cards)
+25. Build `Header.tsx` breadcrumbs navigation
+26. **Checkpoint:** Can navigate from repo → projects → tests
 
-### Phase 4: Additional Renderers
-27. Implement `JsonDiff.tsx`
-28. Implement `CsvTable.tsx`
-29. Implement `PdfViewer.tsx`
-30. Implement `HtmlPreview.tsx`
-31. Implement `AudioPlayer.tsx` + `VideoPlayer.tsx`
-32. Implement `BinaryInfo.tsx`
-33. **Checkpoint:** All content types rendering correctly
+### Phase 4: Content Renderers
+27. Install `react-markdown`, `remark-gfm`, `shiki`
+28. Implement `ImageRenderer.tsx` + `Lightbox.tsx`
+29. Implement `ImageSlider.tsx` (overlay comparison)
+30. Implement `MarkdownRenderer.tsx`
+31. Implement `CodeRenderer.tsx` (Shiki syntax highlighting)
+32. Implement `DiffRenderer.tsx` (side-by-side + unified)
+33. Implement `JsonDiff.tsx` (structural tree diff)
+34. Implement `CsvTable.tsx` (sortable table + cell diff)
+35. Implement `PdfViewer.tsx`
+36. Implement `HtmlPreview.tsx` (sandboxed iframe)
+37. Implement `AudioPlayer.tsx` + `VideoPlayer.tsx`
+38. Implement `BinaryInfo.tsx` (fallback)
+39. **Checkpoint:** All content types rendering correctly
 
-### Phase 5: Polish & Deploy
-34. Implement `lib/cache.ts` (localStorage caching)
-35. Implement dark/light theme toggle
-36. Add responsive breakpoints (mobile layout)
-37. Add loading skeletons for all pages
-38. Add error handling (error boundary, inline errors)
-39. Implement OAuth login flow (requires Cloudflare Worker)
-40. Write Cloudflare Worker code
-41. Set up GitHub Actions deployment workflow
-42. Configure GitHub Pages
-43. **Checkpoint:** Fully deployed and working on GitHub Pages
+### Phase 5: Comparison Engine
+40. Install `diff` package
+41. Implement `lib/diff.ts` (line diff, word diff, JSON structural diff)
+42. Implement file matching algorithm (N-variant exact path matching)
+43. Build `TestComparison.tsx` layout (sections A-D)
+44. Build `ResultsNarrative.tsx` (side-by-side results.md)
+45. Build `FileGroupView.tsx` (routes matched files to correct renderer)
+46. Build `FullscreenModal.tsx` (fullscreen content popup)
+47. Build `UnmatchedFiles.tsx` ("Only in {variant}" sections)
+48. **Checkpoint:** Full comparison view working
 
----
+### Phase 6: Polish & UX
+49. Dark/light theme toggle (useTheme.ts) — system detection + manual override
+50. Responsive layout (mobile stacks vertical, tablet 2-col, desktop full grid)
+51. Loading states & skeleton screens for all async pages
+52. Error boundaries & error pages (per §18)
+53. Rate limit indicator in header
+54. Keyboard shortcuts (navigation, theme toggle)
+55. Footer
+56. **Checkpoint:** Polished, responsive, production-ready UX
+
+### Phase 7: Deployment & Go-Live
+57. Final GitHub Actions workflow test (clean build + deploy)
+58. Verify GitHub Pages configuration
+59. Configure custom domain (optional)
+60. End-to-end test: Auth → Repo → Project → Test → Comparison
+61. Test with existing test data (e.g., `icon-skill` project)
+62. **Checkpoint:** Live and fully functional at ercrvr.github.io/ab-testing
 
 ## 21. Acceptance Criteria
 
