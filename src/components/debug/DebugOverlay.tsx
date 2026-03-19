@@ -208,17 +208,16 @@ export function DebugOverlay() {
 
   return (
     <>
-      {/* Toggle Button — red with error count badge */}
+      {/* Toggle Button — red circle with error count */}
       <button
         onClick={() => setIsOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-[9999] w-12 h-12 rounded-full bg-error text-error-content flex items-center justify-center shadow-lg text-xl active:scale-95 transition-transform"
+        className="fixed bottom-4 right-4 z-[9999] w-12 h-12 rounded-full bg-error text-error-content flex items-center justify-center shadow-lg active:scale-95 transition-transform"
         aria-label="Toggle debug panel"
       >
-        {isOpen ? '\u2715' : '\u26a0\ufe0f'}
-        {!isOpen && errorCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
-            {errorCount}
-          </span>
+        {isOpen ? (
+          <span className="text-xl">{"\u2715"}</span>
+        ) : (
+          <span className="text-lg font-bold animate-pulse">{errorCount}</span>
         )}
       </button>
 
