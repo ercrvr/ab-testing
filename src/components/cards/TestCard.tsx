@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { DifficultyBadge } from '../ui/DifficultyBadge';
 import type { TestSummary } from '../../types';
 
@@ -10,6 +10,9 @@ interface TestCardProps {
 }
 
 export function TestCard({ test, repoOwner, repoName, project }: TestCardProps) {
+  const location = useLocation();
+  const currentDepth = (location.state as { repoNavDepth?: number } | null)?.repoNavDepth ?? 2;
+
   const testNum = test.id.replace('test', '');
   const truncatedPrompt =
     test.prompt.length > 120 ? test.prompt.slice(0, 120) + '…' : test.prompt;
@@ -17,6 +20,7 @@ export function TestCard({ test, repoOwner, repoName, project }: TestCardProps) 
   return (
     <Link
       to={`/repo/${repoOwner}/${repoName}/${project}/${test.id}`}
+      state={{ repoNavDepth: currentDepth + 1 }}
       className="block border border-base-300 rounded-box p-4 hover:bg-base-200 transition-colors"
     >
       <div className="flex items-center justify-between gap-3 mb-1">

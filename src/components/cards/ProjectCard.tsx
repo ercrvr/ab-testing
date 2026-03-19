@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { FolderOpen, FlaskConical } from 'lucide-react';
 import type { Project } from '../../types';
 
@@ -9,9 +9,13 @@ interface ProjectCardProps {
 }
 
 export function ProjectCard({ project, repoOwner, repoName }: ProjectCardProps) {
+  const location = useLocation();
+  const currentDepth = (location.state as { repoNavDepth?: number } | null)?.repoNavDepth ?? 1;
+
   return (
     <Link
       to={`/repo/${repoOwner}/${repoName}/${project.name}`}
+      state={{ repoNavDepth: currentDepth + 1 }}
       className="card bg-base-200 hover:bg-base-300 transition-colors cursor-pointer"
     >
       <div className="card-body p-5">
