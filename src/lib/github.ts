@@ -52,12 +52,19 @@ export function subscribeRateLimit(listener: () => void): () => void {
 /**
  * Update rate limit info from response headers.
  *
- * GitHub's load balancers can return headers from different rate-limit windows
- * across concurrent requests (different backend servers). To prevent the
- * displayed value from "jumping" we enforce two rules:
- *   1. Ignore responses from an older window (lower reset timestamp).
- *   2. Within the same window, remaining can only decrease — never increase.
+ * GitHub's load balancers can return headers from different backend servers
+ * within the same hourly rate-limit window. These servers report slightly
+ * different reset timestamps (up to ~5 minutes apart) and different remaining
+ * counts. To prevent the displayed value from "jumping" we use a threshold:
+ *
+ *   - If reset timestamps differ by < 10 minutes → same window (LB skew).
+ *     Remaining can only go DOWN (take the more conservative / lower value).
+ *   - If reset timestamps differ by > 10 minutes → genuinely different window.
+ *     A real hourly rollover always has a ~3600s jump, so 600s is very safe.
+ *   - If the incoming reset is much older (> 10 min behind) → stale; ignore.
  */
+const SAME_WINDOW_THRESHOLD = 600; // 10 minutes in seconds
+
 function updateRateLimit(headers: Record<string, string | undefined>): void {
   const remaining = headers['x-ratelimit-remaining'];
   const limit = headers['x-ratelimit-limit'];
@@ -69,20 +76,32 @@ function updateRateLimit(headers: Record<string, string | undefined>): void {
   const incomingLimit = limit != null ? parseInt(limit, 10) : rateLimitInfo.limit;
   const incomingReset = reset != null ? parseInt(reset, 10) : 0;
 
-  // Ignore stale responses from an older rate-limit window
-  if (rateLimitInfo.reset > 0 && incomingReset > 0 && incomingReset < rateLimitInfo.reset) {
-    return;
-  }
+  if (rateLimitInfo.reset > 0 && incomingReset > 0) {
+    const resetDiff = incomingReset - rateLimitInfo.reset;
 
-  if (incomingReset > rateLimitInfo.reset) {
-    // New rate-limit window started — accept all values
+    if (resetDiff < -SAME_WINDOW_THRESHOLD) {
+      // Genuinely older window — ignore completely
+      return;
+    }
+
+    if (Math.abs(resetDiff) <= SAME_WINDOW_THRESHOLD) {
+      // Same window (possibly different backend with skewed timestamps).
+      // Remaining can only go down — use the more conservative (lower) value.
+      rateLimitInfo.remaining = Math.min(rateLimitInfo.remaining, incomingRemaining);
+      rateLimitInfo.limit = incomingLimit;
+      // Keep the later reset time (more conservative for countdown display)
+      rateLimitInfo.reset = Math.max(rateLimitInfo.reset, incomingReset);
+    } else {
+      // Genuinely new window (>10 min jump, i.e. hourly rollover) — accept all values
+      rateLimitInfo.remaining = incomingRemaining;
+      rateLimitInfo.limit = incomingLimit;
+      rateLimitInfo.reset = incomingReset;
+    }
+  } else {
+    // First data point or missing reset — accept as-is
     rateLimitInfo.remaining = incomingRemaining;
     rateLimitInfo.limit = incomingLimit;
-    rateLimitInfo.reset = incomingReset;
-  } else {
-    // Same window — remaining can only go down (more conservative = more accurate)
-    rateLimitInfo.remaining = Math.min(rateLimitInfo.remaining, incomingRemaining);
-    rateLimitInfo.limit = incomingLimit;
+    if (incomingReset > 0) rateLimitInfo.reset = incomingReset;
   }
 
   rateLimitInfo.lastChecked = Date.now();
@@ -100,15 +119,15 @@ function createRateLimitAwareFetch(): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await globalThis.fetch(input, init);
 
-    const remaining = response.headers.get('x-ratelimit-remaining') ?? undefined;
-    const limit = response.headers.get('x-ratelimit-limit') ?? undefined;
-    const reset = response.headers.get('x-ratelimit-reset') ?? undefined;
+    const rlRemaining = response.headers.get('x-ratelimit-remaining') ?? undefined;
+    const rlLimit = response.headers.get('x-ratelimit-limit') ?? undefined;
+    const rlReset = response.headers.get('x-ratelimit-reset') ?? undefined;
 
-    if (remaining != null) {
+    if (rlRemaining != null) {
       updateRateLimit({
-        'x-ratelimit-remaining': remaining,
-        'x-ratelimit-limit': limit,
-        'x-ratelimit-reset': reset,
+        'x-ratelimit-remaining': rlRemaining,
+        'x-ratelimit-limit': rlLimit,
+        'x-ratelimit-reset': rlReset,
       });
     }
 
