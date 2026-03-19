@@ -10,6 +10,7 @@ interface LogEntry {
 
 let logId = 0;
 let globalAddLog: ((tag: string, message: string, color?: string) => void) | null = null;
+let globalShowOverlay: (() => void) | null = null;
 
 const ts = () => new Date().toISOString().slice(11, 23);
 
@@ -17,6 +18,27 @@ function installInterceptors() {
   const addLog = (tag: string, message: string, color = '#e2e8f0') => {
     globalAddLog?.(tag, message, color);
   };
+
+  // ── Console Error Interceptor ──
+  const origConsoleError = console.error.bind(console);
+  console.error = function (...args: unknown[]) {
+    origConsoleError(...args);
+    const message = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+    addLog('ERROR', message.slice(0, 500), '#fca5a5');
+    globalShowOverlay?.();
+  };
+
+  // Also intercept unhandled errors and promise rejections
+  window.addEventListener('error', (event) => {
+    addLog('ERROR', `${event.message} (${event.filename}:${event.lineno})`, '#fca5a5');
+    globalShowOverlay?.();
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+    addLog('ERROR', `Unhandled rejection: ${reason.slice(0, 500)}`, '#fca5a5');
+    globalShowOverlay?.();
+  });
 
   // ── Fetch Interceptor ──
   const origFetch = window.fetch;
@@ -32,7 +54,7 @@ function installInterceptors() {
       const headers = (args[1] as RequestInit)?.headers as Record<string, string> | undefined;
       const hasEtag = !!(headers?.['if-none-match'] || headers?.['If-None-Match']);
       const shortUrl = url.replace('https://api.github.com', '');
-      addLog('FETCH', `#${seq} → ${method} ${shortUrl}${hasEtag ? ' (ETag)' : ''}`, '#93c5fd');
+      addLog('FETCH', `#${seq} \u2192 ${method} ${shortUrl}${hasEtag ? ' (ETag)' : ''}`, '#93c5fd');
     }
 
     try {
@@ -49,13 +71,13 @@ function installInterceptors() {
         if (status === 304) {
           const allHeaders: Record<string, string> = {};
           response.headers.forEach((v, k) => { allHeaders[k] = v; });
-          addLog('FETCH', `#${seq} ← 304 headers: ${JSON.stringify(allHeaders)}`, '#fbbf24');
+          addLog('FETCH', `#${seq} \u2190 304 headers: ${JSON.stringify(allHeaders)}`, '#fbbf24');
         }
 
         const statusColor = status === 304 ? '#fbbf24' : status < 300 ? '#86efac' : '#fca5a5';
         addLog(
           'FETCH',
-          `#${seq} ← ${status} | RL: ${rlExists ? `${remaining}/${limit}` : '⚠️ MISSING'} | reset: ${resetMins}m | hdr: ${rlExists ? '✅' : '❌'}`,
+          `#${seq} \u2190 ${status} | RL: ${rlExists ? `${remaining}/${limit}` : '\u26a0\ufe0f MISSING'} | reset: ${resetMins}m | hdr: ${rlExists ? '\u2705' : '\u274c'}`,
           statusColor
         );
       }
@@ -63,7 +85,7 @@ function installInterceptors() {
       return response;
     } catch (err) {
       if (isGitHub) {
-        addLog('FETCH', `#${seq} ✘ ${(err as Error)?.message ?? err}`, '#fca5a5');
+        addLog('FETCH', `#${seq} \u2718 ${(err as Error)?.message ?? err}`, '#fca5a5');
       }
       throw err;
     }
@@ -93,26 +115,26 @@ function installInterceptors() {
   const origReplace = history.replaceState.bind(history);
 
   history.pushState = function (...args: Parameters<typeof history.pushState>) {
-    addLog('HISTORY', `pushState → ${String(args[2] ?? '(none)')} (depth: ${history.length})`, '#fdba74');
+    addLog('HISTORY', `pushState \u2192 ${String(args[2] ?? '(none)')} (depth: ${history.length})`, '#fdba74');
     return origPush(...args);
   };
 
   history.replaceState = function (...args: Parameters<typeof history.replaceState>) {
-    addLog('HISTORY', `replaceState → ${String(args[2] ?? '(none)')} (depth: ${history.length})`, '#fdba74');
+    addLog('HISTORY', `replaceState \u2192 ${String(args[2] ?? '(none)')} (depth: ${history.length})`, '#fdba74');
     return origReplace(...args);
   };
 
   window.addEventListener('popstate', () => {
-    addLog('HISTORY', `popstate → ${location.href} (depth: ${history.length})`, '#fdba74');
+    addLog('HISTORY', `popstate \u2192 ${location.href} (depth: ${history.length})`, '#fdba74');
   });
 
-  // ── Initial State ──
+  // ── Initial State (logged silently, no auto-show) ──
   try {
     const stored = sessionStorage.getItem('ab-rate-limit');
     if (stored) {
       const p = JSON.parse(stored);
       const resetMins = Math.ceil((p.reset * 1000 - Date.now()) / 60000);
-      addLog('INIT', `sessionStorage RL → remaining: ${p.remaining}, limit: ${p.limit}, reset: ${resetMins}m`, '#67e8f9');
+      addLog('INIT', `sessionStorage RL \u2192 remaining: ${p.remaining}, limit: ${p.limit}, reset: ${resetMins}m`, '#67e8f9');
     } else {
       addLog('INIT', 'No rate-limit in sessionStorage', '#67e8f9');
     }
@@ -127,25 +149,36 @@ function installInterceptors() {
 let interceptorsInstalled = false;
 
 export function DebugOverlay() {
+  const [isVisible, setIsVisible] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [errorCount, setErrorCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const addLog = useCallback((tag: string, message: string, color = '#e2e8f0') => {
-    setLogs((prev) => [
-      ...prev,
-      { id: ++logId, time: ts(), tag, message, color },
-    ]);
+    const entry: LogEntry = { id: ++logId, time: ts(), tag, message, color };
+    setLogs((prev) => [...prev, entry]);
+    if (tag === 'ERROR') {
+      setErrorCount((c) => c + 1);
+    }
+  }, []);
+
+  const showOverlay = useCallback(() => {
+    setIsVisible(true);
   }, []);
 
   useEffect(() => {
     globalAddLog = addLog;
+    globalShowOverlay = showOverlay;
     if (!interceptorsInstalled) {
       installInterceptors();
       interceptorsInstalled = true;
     }
-    return () => { globalAddLog = null; };
-  }, [addLog]);
+    return () => {
+      globalAddLog = null;
+      globalShowOverlay = null;
+    };
+  }, [addLog, showOverlay]);
 
   useEffect(() => {
     if (isOpen && scrollRef.current) {
@@ -158,31 +191,47 @@ export function DebugOverlay() {
       .map((l) => `[${l.time}] [${l.tag}] ${l.message}`)
       .join('\n');
     navigator.clipboard.writeText(text).then(
-      () => addLog('DEBUG', 'Logs copied to clipboard ✅', '#86efac'),
-      () => addLog('DEBUG', 'Copy failed — select and copy manually', '#fca5a5')
+      () => addLog('DEBUG', 'Logs copied to clipboard \u2705', '#86efac'),
+      () => addLog('DEBUG', 'Copy failed \u2014 select and copy manually', '#fca5a5')
     );
   };
 
+  const handleClear = () => {
+    setLogs([]);
+    setErrorCount(0);
+    setIsOpen(false);
+    setIsVisible(false);
+  };
+
+  // Hidden until an error surfaces
+  if (!isVisible) return null;
+
   return (
     <>
-      {/* Toggle Button */}
+      {/* Toggle Button — red with error count badge */}
       <button
         onClick={() => setIsOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-[9999] w-12 h-12 rounded-full bg-neutral text-neutral-content flex items-center justify-center shadow-lg text-xl active:scale-95 transition-transform"
+        className="fixed bottom-4 right-4 z-[9999] w-12 h-12 rounded-full bg-error text-error-content flex items-center justify-center shadow-lg text-xl active:scale-95 transition-transform"
         aria-label="Toggle debug panel"
       >
-        {isOpen ? '✕' : '🐛'}
+        {isOpen ? '\u2715' : '\u26a0\ufe0f'}
+        {!isOpen && errorCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+            {errorCount}
+          </span>
+        )}
       </button>
 
       {/* Panel */}
       {isOpen && (
-        <div className="fixed inset-x-0 bottom-16 z-[9998] mx-2 max-h-[60vh] flex flex-col rounded-lg shadow-2xl border border-base-300 overflow-hidden"
+        <div
+          className="fixed inset-x-0 bottom-16 z-[9998] mx-2 max-h-[60vh] flex flex-col rounded-lg shadow-2xl border border-base-300 overflow-hidden"
           style={{ backgroundColor: 'rgba(15, 15, 25, 0.95)' }}
         >
           {/* Toolbar */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-base-300 shrink-0">
             <span className="text-xs font-mono text-gray-400">
-              AB-DEBUG · {logs.length} entries
+              AB-DEBUG {"\u00b7"} {logs.length} entries {"\u00b7"} {errorCount} errors
             </span>
             <div className="flex gap-2">
               <button
@@ -192,7 +241,7 @@ export function DebugOverlay() {
                 Copy
               </button>
               <button
-                onClick={() => setLogs([])}
+                onClick={handleClear}
                 className="text-xs px-2 py-1 rounded bg-error/20 text-error hover:bg-error/30 font-mono"
               >
                 Clear
@@ -204,7 +253,7 @@ export function DebugOverlay() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-0.5 overscroll-contain">
             {logs.length === 0 && (
               <p className="text-xs text-gray-500 font-mono text-center py-4">
-                Navigate between repos to capture logs...
+                No logs captured yet...
               </p>
             )}
             {logs.map((l) => (
