@@ -1,15 +1,31 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTestData } from '../hooks/useTestData';
 import { useRepo } from '../hooks/useRepo';
 import { DifficultyBadge } from '../components/ui/DifficultyBadge';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorBanner } from '../components/ui/ErrorBanner';
-import { FileText, Files } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Files } from 'lucide-react';
+import { FileGroupRenderer } from '../components/renderers/FileGroupRenderer';
 
 export function TestComparison() {
   const { owner, repo, project, testId } = useParams();
   const { selectedRepo } = useRepo();
   const defaultBranch = selectedRepo?.defaultBranch ?? 'main';
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (relativePath: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(relativePath)) {
+        next.delete(relativePath);
+      } else {
+        next.add(relativePath);
+      }
+      return next;
+    });
+  };
 
   const { data: testDetail, isLoading, error, refetch } = useTestData(
     owner,
@@ -67,15 +83,36 @@ export function TestComparison() {
                 </span>
               </h2>
               <div className="space-y-2">
-                {testDetail.matchedFiles.map((group) => (
-                  <div
-                    key={group.relativePath}
-                    className="border border-base-300 rounded-box p-3 flex items-center justify-between"
-                  >
-                    <span className="font-mono text-sm">{group.relativePath}</span>
-                    <span className="badge badge-sm badge-ghost">{group.contentType}</span>
-                  </div>
-                ))}
+                {testDetail.matchedFiles.map((group) => {
+                  const isExpanded = expandedGroups.has(group.relativePath);
+                  return (
+                    <div
+                      key={group.relativePath}
+                      className="border border-base-300 rounded-box overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        className="w-full p-3 flex items-center justify-between hover:bg-base-200/50 transition-colors cursor-pointer"
+                        onClick={() => toggleGroup(group.relativePath)}
+                      >
+                        <span className="flex items-center gap-2">
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-base-content/50" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-base-content/50" />
+                          )}
+                          <span className="font-mono text-sm">{group.relativePath}</span>
+                        </span>
+                        <span className="badge badge-sm badge-ghost">{group.contentType}</span>
+                      </button>
+                      {isExpanded && (
+                        <div className="p-4 border-t border-base-300">
+                          <FileGroupRenderer group={group} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
