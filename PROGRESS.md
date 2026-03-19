@@ -17,21 +17,21 @@
 ---
 
 ## DOC Updates - IMPORTANT
-  
-  > **DO NOT push to main until the owner explicitly confirms there are no pending PRs that could result to conflict/s. Double-check with the owner if they forgot to tell you main is updated.**
-  
+
+> **DO NOT push to main until the owner explicitly confirms there are no pending PRs that could result to conflict/s. Double-check with the owner if they forgot to tell you main is updated.**
+
 ---
-  
+
 ## CI/CD Constraints — IMPORTANT
-  
+
 > **DO NOT push changes to `.github/workflows/` or any CI/CD configuration files.** The owner manages these directly. This applies to all agents — never suggest or attempt to modify workflow files via the GitHub API or PRs.
-  
-  - Deploy workflow: `.github/workflows/deploy.yml` — managed by owner only
-  - The workflow uses `paths-ignore` to skip builds on doc-only pushes (`*.md`, `docs/**`)
-  - Use `workflow_dispatch` (manual trigger) if a build is needed after doc changes
-  
+
+- Deploy workflow: `.github/workflows/deploy.yml` — managed by owner only
+- The workflow uses `paths-ignore` to skip builds on doc-only pushes (`*.md`, `docs/**`)
+- Use `workflow_dispatch` (manual trigger) if a build is needed after doc changes
+
 ---
-  
+
 ## PR Workflow — IMPORTANT
 
 > **DO NOT create a PR until the owner explicitly confirms a phase is 100% done unless the owner requests for the PR.**
