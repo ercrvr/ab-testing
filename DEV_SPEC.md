@@ -1,8 +1,8 @@
 # A/B Testing Dashboard — Developer Specification
 
-> **Version:** 1.1
-> **Last Updated:** 2026-03-18
-> **Status:** Phase 2 Complete (Authentication)
+> **Version:** 1.2
+> **Last Updated:** 2026-03-19
+> **Status:** Phase 3 Complete (Core Navigation & Data Discovery)
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -72,11 +72,11 @@ Authenticate → Select Repo → Browse Projects → Browse Tests → Compare Va
 | Component Library | `daisyui` | ^5.5 | Pre-built Tailwind components | ✅ Phase 1 |
 | Routing | `react-router-dom` | ^7.x | Client-side routing (hash mode) | ✅ Phase 1 |
 | Icons | `lucide-react` | ^0.400+ | Icon set | ✅ Phase 1 |
-| GitHub API | `@octokit/rest` | ^21.x | Official GitHub REST API client | ✅ Phase 3 |
-| Markdown | `react-markdown` | ^9.x | Render `.md` files | Phase 4 |
-| Markdown Plugins | `remark-gfm` | ^4.x | GitHub Flavored Markdown (tables, strikethrough, etc.) | Phase 4 |
-| Syntax Highlighting | `shiki` | ^1.x | Code syntax highlighting for diffs and code viewers | Phase 4 |
-| Diff Engine | `diff` | ^7.x | Line-level and word-level text diffing | Phase 5 |
+| GitHub API | `@octokit/rest` | ^22.0.1 | Official GitHub REST API client | ✅ Phase 3 |
+| Markdown | `react-markdown` | ^10.1.0 | Render `.md` files | ✅ Phase 4 |
+| Markdown Plugins | `remark-gfm` | ^4.x | GitHub Flavored Markdown (tables, strikethrough, etc.) | ✅ Phase 4 |
+| Syntax Highlighting | `shiki` | ^4.0.2 | Code syntax highlighting for diffs and code viewers | ✅ Phase 4 |
+| Diff Engine | `diff` | ^8.0.3 | Line-level and word-level text diffing | ✅ Phase 5 |
 
 ### Typography
 
@@ -186,8 +186,10 @@ ercrvr/ab-testing/
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
+├── eslint.config.js                      # ESLint flat config
 ├── .env.example                          # Template for environment variables
 ├── README.md                             # Project readme (already in repo)
+├── PROGRESS.md                           # Phase-by-phase implementation progress log
 └── AB_TEST_GUIDE.md                      # Test structure guide (already in repo)
 ```
 
@@ -247,7 +249,6 @@ export interface RepoInfo {
   description: string | null;
   isPrivate: boolean;
   defaultBranch: string;
-  updatedAt: string;      // ISO 8601
 }
 
 // ─── Project ────────────────────────────────────────────
@@ -257,7 +258,6 @@ export interface Project {
   displayName: string;     // formatted, e.g., "Icon Generation"
   path: string;            // repo path, e.g., "icon-generation"
   testCount: number;
-  lastUpdated?: string;
 }
 
 // ─── Variant Metadata ───────────────────────────────────
@@ -284,10 +284,12 @@ export interface TestMeta {
 }
 
 export interface TestSummary {
-  id: number;              // extracted from "testN" directory name
-  dirName: string;         // e.g., "test1"
+  id: string;              // e.g., "test1" (the full dir name)
+  name: string;            // from meta.name
   path: string;            // e.g., "icon-generation/tests/test1"
-  meta: TestMeta;
+  difficulty: 'Simple' | 'Medium' | 'Complex';
+  prompt: string;
+  variantNames: string[];
 }
 
 export interface VariantData {
@@ -311,7 +313,7 @@ export interface TestDetail {
 export interface DiscoveredFile {
   path: string;            // relative path within variant dir, e.g., "png/icon-32.png"
   name: string;            // filename only, e.g., "icon-32.png"
-  ext: string;             // lowercase extension, e.g., "png"
+  extension: string;       // lowercase extension, e.g., "png"
   size: number;            // bytes
   sha: string;             // git blob SHA (used for fetching content)
   downloadUrl: string;     // raw content URL
@@ -437,7 +439,6 @@ Frontend stores token:
 |---|---|
 | `ab-dashboard-token` | The access token string |
 | `ab-dashboard-auth-method` | `'oauth'` or `'pat'` |
-| `ab-dashboard-user` | JSON string of `GitHubUser` (cached to avoid API call on every load) |
 | `ab-dashboard-selected-repo` | JSON string of `RepoInfo` (last selected repo) |
 
 ### Implementation Notes (Phase 2)
@@ -461,24 +462,24 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 |---|---|---|
 | `/#/` | `Landing` | Auth page (if not authenticated) |
 | `/#/repos` | `RepoSelector` | Browse/search repos |
-| `/#/:owner/:repo` | `ProjectList` | All projects in a repo |
-| `/#/:owner/:repo/:project` | `ProjectView` | Single project overview + test list |
-| `/#/:owner/:repo/:project/:testId` | `TestComparison` | Side-by-side comparison |
+| `/#/repo/:owner/:repo` | `ProjectList` | All projects in a repo |
+| `/#/repo/:owner/:repo/:project` | `ProjectView` | Single project overview + test list |
+| `/#/repo/:owner/:repo/:project/:testId` | `TestComparison` | Side-by-side comparison |
 
 ### Route Guards
 
 - All routes except `/#/` require authentication. If `token` is null, redirect to `/#/`.
 - `/#/` should redirect to `/#/repos` if already authenticated.
-- If `selectedRepo` exists in localStorage, the `/#/repos` page should show it as "Continue with {repo}" at the top.
+- If `selectedRepo` exists in localStorage, the `/#/repos` page should show it as "Continue with {repo}" at the top. *(Phase 6 TODO — not yet implemented)*
 
 ### URL Examples
 
 ```
-/#/                                           → Landing/auth
-/#/repos                                      → Repo selector
-/#/ercrvr/ab-testing                          → Project list
-/#/ercrvr/ab-testing/icon-generation          → Project view
-/#/ercrvr/ab-testing/icon-generation/test1    → Test comparison
+/#/                                                → Landing/auth
+/#/repos                                           → Repo selector
+/#/repo/ercrvr/ab-testing                          → Project list
+/#/repo/ercrvr/ab-testing/icon-generation          → Project view
+/#/repo/ercrvr/ab-testing/icon-generation/test1    → Test comparison
 ```
 
 ---
@@ -540,7 +541,7 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 │  │ 🔍 Search repositories...                          │        │
 │  └─────────────────────────────────────────────────────┘        │
 │                                                                 │
-│  📌 Recently Used (if localStorage has last repo)               │
+│  📌 Recently Used (if localStorage has last repo)  [Phase 6]    │
 │  ┌─────────────────────────────────────────────────────┐        │
 │  │  ercrvr/ab-testing  •  Private  •  Updated 2d ago   │        │
 │  └─────────────────────────────────────────────────────┘        │
@@ -560,8 +561,10 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 **Behavior:**
 - On load, fetch the user's repos via `GET /user/repos?sort=updated&per_page=30`
 - Search box filters client-side first. If the user types `owner/repo` format, also search via `GET /repos/{owner}/{repo}` to find repos they have access to but don't own
-- Clicking a repo saves it to localStorage and navigates to `/#/{owner}/{repo}`
+- Clicking a repo saves it to localStorage and navigates to `/#/repo/{owner}/{repo}`
 - Paginate with "Load more" button (not infinite scroll — saves API calls)
+
+> **Phase 6 TODO:** The "📌 Recently Used" / "Continue with {repo}" section shown in the layout above is planned but not yet implemented. Currently, repos are displayed as a flat list with search and pagination only.
 
 ---
 
@@ -596,7 +599,7 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 - `displayName` is derived from directory name: replace hyphens with spaces, title case each word
   - `icon-generation` → `Icon Generation`
   - `api-client` → `Api Client`
-- Click card → navigate to `/#/{owner}/{repo}/{project}`
+- Click card → navigate to `/#/repo/{owner}/{repo}/{project}`
 - If no projects found, show empty state: "No A/B test projects found. Make sure your repo follows the expected structure." with a link to `AB_TEST_GUIDE.md`
 
 ---
@@ -637,7 +640,7 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 - On mount, run discovery Stage 2: list tests, fetch all meta.json files
 - Stats are computed client-side from the meta.json data
 - Test cards show: test name, difficulty badge, prompt (truncated to ~120 chars with "...")
-- Click test card → navigate to `/#/{owner}/{repo}/{project}/{testId}`
+- Click test card → navigate to `/#/repo/{owner}/{repo}/{project}/{testId}`
 - Tests sorted by ID (numeric)
 
 ---
@@ -749,14 +752,14 @@ Sticky top bar with backdrop blur. Contains:
 Props: none (reads from location)
 ```
 
-Auto-generates breadcrumb trail from `location.pathname` (parses segments directly — `useParams()` doesn't work here because the component lives outside `<Routes>`). Each segment is clickable.
+Auto-generates breadcrumb trail from `location.pathname` (parses segments directly — `useParams()` doesn't work here because the component lives outside `<Routes>`). Each segment is clickable. Recognizes `segments[0] === 'repo'` and generates links with the `/repo/` prefix (e.g., `/repo/{owner}/{repo}`).
 
 **History depth tracking:** Each navigation level passes `repoNavDepth` in `location.state`. Clicking a breadcrumb calls `history.go(-(currentDepth - targetDepth))` to pop the exact number of entries, keeping browser back/forward buttons consistent.
 
 **Segments:**
-- `Repos` (depth 0) — clears selected repo
-- `owner/repo` (depth 1)
-- `Project Name` (depth 2, title-cased from directory name)
+- `Repos` (depth 0) — clears selected repo, links to `/repos`
+- `owner/repo` (depth 1) — links to `/repo/{owner}/{repo}`
+- `Project Name` (depth 2, title-cased from directory name) — links to `/repo/{owner}/{repo}/{project}`
 - `Test N` (depth 3)
 
 Only shows on pages deeper than `/repos`. Hidden on landing page.
@@ -1024,10 +1027,10 @@ interface UseQueryResult<T> {
 }
 ```
 
-- `useProjects(owner, repo)` → `UseQueryResult<Project[]>`
-- `useTests(owner, repo, project)` → `UseQueryResult<TestSummary[]>`
-- `useTestData(owner, repo, project, testId)` → `UseQueryResult<TestDetail>`
-- `useFileContent(owner, repo, filePath, sha)` → `UseQueryResult<string>` (for text files)
+- `useProjects(owner, repo, defaultBranch)` → `UseQueryResult<Project[]>`
+- `useTests(owner, repo, project, defaultBranch)` → `UseQueryResult<TestSummary[]>`
+- `useTestData(owner, repo, project, testId, defaultBranch)` → `UseQueryResult<TestDetail>`
+- `useFileContent(owner, repo, filePath, defaultBranch)` → `UseQueryResult<string>` *(Phase 4 — not yet implemented; will wrap `getFileContent()` from `lib/github.ts`)*
 
 Hooks fetch data on mount (or when params change) and cache results.
 
@@ -1088,12 +1091,10 @@ export function getFileContent(owner: string, repo: string, path: string): Promi
 
 | Function | API Endpoint | Used By |
 |---|---|---|
-| `getUser()` | `GET /user` | Auth validation |
-| `listUserRepos(page, perPage)` | `GET /user/repos?sort=updated` | RepoSelector |
-| `getRepo(owner, repo)` | `GET /repos/{owner}/{repo}` | RepoSelector (direct access) |
-| `getContents(owner, repo, path)` | `GET /repos/{owner}/{repo}/contents/{path}` | Discovery |
-| `getFileContent(owner, repo, path)` | `GET /repos/{owner}/{repo}/contents/{path}` | File content fetching |
-| `getRawContent(downloadUrl)` | Direct fetch to `raw.githubusercontent.com` | Binary file display |
+| `listUserRepos(page, perPage)` | `GET /user/repos?sort=updated` | RepoSelector (paginated listing) |
+| `getRepo(owner, repo)` | `GET /repos/{owner}/{repo}` | RepoSelector (direct access); ETag cached |
+| `getRepoTree(owner, repo, branch)` | `GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1` | Discovery (single-call full tree); ETag cached |
+| `getFileContent(owner, repo, path)` | `GET /repos/{owner}/{repo}/contents/{path}` | File content fetching; ETag cached + stale fallback |
 
 ### Rate Limiting
 
@@ -1165,11 +1166,31 @@ Tailwind v4 uses a CSS-first configuration. No `tailwind.config.js` file.
 @import "tailwindcss";
 @plugin "daisyui";
 
-/* Custom theme overrides if needed */
 @theme {
   --color-diff-added: oklch(0.87 0.12 145);
   --color-diff-removed: oklch(0.87 0.12 25);
   --color-diff-changed: oklch(0.9 0.1 85);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Lab-style typography utilities */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+.lab-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 ```
 
@@ -1217,6 +1238,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -1279,9 +1303,10 @@ jobs:
 ```typescript
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   base: '/ab-testing/',    // Must match repo name for GitHub Pages
   build: {
     outDir: 'dist',
@@ -1307,11 +1332,7 @@ export default {
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN,
-          'Access-Control-Allow-Methods': 'POST',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(request, env),
       });
     }
 
@@ -1319,37 +1340,53 @@ export default {
       return new Response('Method not allowed', { status: 405 });
     }
 
-    const { code } = await request.json();
-    if (!code) {
-      return new Response(JSON.stringify({ error: 'Missing code' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
+    try {
+      const { code } = await request.json();
+      if (!code) {
+        return new Response(JSON.stringify({ error: 'Missing code' }), {
+          status: 400,
+          headers: { ...corsHeaders(request, env), 'Content-Type': 'application/json' },
+        });
+      }
+
+      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: env.GITHUB_CLIENT_ID,
+          client_secret: env.GITHUB_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const tokenData = await tokenResponse.json();
+
+      return new Response(JSON.stringify(tokenData), {
+        headers: { ...corsHeaders(request, env), 'Content-Type': 'application/json' },
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: 'Internal error' }), {
+        status: 500,
+        headers: { ...corsHeaders(request, env), 'Content-Type': 'application/json' },
       });
     }
-
-    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        client_id: env.GITHUB_CLIENT_ID,
-        client_secret: env.GITHUB_CLIENT_SECRET,
-        code,
-      }),
-    });
-
-    const tokenData = await tokenResponse.json();
-
-    return new Response(JSON.stringify(tokenData), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN,
-      },
-    });
   },
 };
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim());
+  const isAllowed = allowed.includes(origin) || allowed.includes('*');
+
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : '',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+}
 ```
 
 ### Worker Environment Variables
@@ -1358,7 +1395,7 @@ export default {
 |---|---|
 | `GITHUB_CLIENT_ID` | From GitHub OAuth App settings |
 | `GITHUB_CLIENT_SECRET` | From GitHub OAuth App settings |
-| `ALLOWED_ORIGIN` | `https://ercrvr.github.io` (your Pages domain) |
+| `ALLOWED_ORIGINS` | Comma-separated list of allowed origins (e.g., `https://ercrvr.github.io`) |
 
 ### Deployment Steps
 
@@ -1376,15 +1413,17 @@ export default {
 ### `.env.example`
 
 ```env
-# GitHub OAuth App Client ID (public — safe for frontend)
-VITE_GITHUB_CLIENT_ID=your_client_id_here
+# GitHub OAuth App — Client ID (public, safe for frontend)
+VITE_GITHUB_CLIENT_ID=your_github_oauth_app_client_id
 
-# Cloudflare Worker URL for OAuth token exchange
-VITE_OAUTH_PROXY_URL=https://your-worker.workers.dev
+# Cloudflare Worker URL — OAuth token exchange proxy
+VITE_OAUTH_PROXY_URL=https://your-worker.your-subdomain.workers.dev
 
-# GitHub Pages URL (used for OAuth redirect_uri)
-VITE_APP_URL=https://ercrvr.github.io/ab-testing
+# Optional: Set required OAuth scopes (default: repo)
+VITE_GITHUB_SCOPES=repo
 ```
+
+> **Note:** The app URL (`redirect_uri` for OAuth) is computed dynamically from `window.location` at runtime — there is no `VITE_APP_URL` variable.
 
 ### Accessing in Code
 
@@ -1393,7 +1432,6 @@ Vite exposes env vars prefixed with `VITE_` via `import.meta.env`:
 ```typescript
 const GITHUB_CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID;
 const OAUTH_PROXY_URL = import.meta.env.VITE_OAUTH_PROXY_URL;
-const APP_URL = import.meta.env.VITE_APP_URL;
 ```
 
 ---
@@ -1484,7 +1522,7 @@ Build in this order. Each phase produces a testable increment.
 15. Route guards (ProtectedRoute wrapper, auth redirect)
 16. **Checkpoint:** Can log in via OAuth or PAT, protected routes work
 
-### Phase 3: Core Navigation & Data Discovery
+### Phase 3: Core Navigation & Data Discovery ✅
 17. Install `@octokit/rest`
 18. Implement `lib/github.ts` (Octokit wrapper with rate limit handling)
 19. Implement `lib/discovery.ts` (Git Trees API for single-call discovery)
@@ -1494,10 +1532,10 @@ Build in this order. Each phase produces a testable increment.
 23. Build `ProjectList.tsx` (project cards grid)
 24. Build `ProjectView.tsx` (stats + test cards)
 25. Build `Header.tsx` breadcrumbs navigation
-26. **Checkpoint:** Can navigate from repo → projects → tests
+26. **Checkpoint:** Can navigate from repo → projects → tests ✅
 
 ### Phase 4: Content Renderers
-27. Install `react-markdown`, `remark-gfm`, `shiki`
+27. Install `react-markdown`, `remark-gfm`, `shiki` *(dependencies installed ✅ — renderers not yet implemented)*
 28. Implement `ImageRenderer.tsx` + `Lightbox.tsx`
 29. Implement `ImageSlider.tsx` (overlay comparison)
 30. Implement `MarkdownRenderer.tsx`
