@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Hash } from 'lucide-react';
+import { lazy, Suspense, useState, useEffect } from 'react';
+import { Hash, ArrowLeftRight } from 'lucide-react';
 import type { DiscoveredFile } from '../../types';
 import { useFileContent } from '../../hooks/useFileContent';
 import { getShikiLanguage } from '../../lib/content-type';
@@ -7,6 +7,11 @@ import { highlightCode } from '../../lib/shiki';
 import { FullscreenModal } from './FullscreenModal';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
 import { ErrorBanner } from '../ui/ErrorBanner';
+
+// Lazy-load DiffRenderer to keep the `diff` package out of the main bundle
+const DiffRenderer = lazy(() =>
+  import('./DiffRenderer').then((m) => ({ default: m.DiffRenderer })),
+);
 
 interface CodeRendererProps {
   files: Record<string, DiscoveredFile>;
@@ -99,9 +104,11 @@ function VariantCodePanel({
 
 export function CodeRenderer({ files, owner, repo }: CodeRendererProps) {
   const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [diffMode, setDiffMode] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
 
   const entries = Object.entries(files);
+  const showDiffToggle = entries.length >= 2;
 
   const colsClass =
     entries.length === 1
@@ -115,38 +122,60 @@ export function CodeRenderer({ files, owner, repo }: CodeRendererProps) {
       {/* Toolbar */}
       <div className="flex items-center gap-2 mb-3">
         <button
-          className={`btn btn-sm gap-1.5 ${showLineNumbers ? 'btn-active' : ''}`}
+          className={`btn btn-sm gap-1.5 ${showLineNumbers && !diffMode ? 'btn-active' : ''}`}
           onClick={() => setShowLineNumbers((v) => !v)}
+          disabled={diffMode}
         >
           <Hash className="w-4 h-4" />
           Lines
         </button>
+
+        {showDiffToggle && (
+          <button
+            className={`btn btn-sm gap-1.5 ${diffMode ? 'btn-active' : ''}`}
+            onClick={() => setDiffMode((v) => !v)}
+          >
+            <ArrowLeftRight className="w-4 h-4" />
+            Diff
+          </button>
+        )}
       </div>
 
-      {/* Grid of variant panels */}
-      <div className={`grid ${colsClass} gap-4`}>
-        {entries.map(([variantName, file]) => (
-          <VariantCodePanel
-            key={variantName}
-            variantName={variantName}
-            file={file}
+      {/* Body */}
+      {diffMode ? (
+        <Suspense
+          fallback={<LoadingSpinner size="sm" text="Loading diff viewer..." />}
+        >
+          <DiffRenderer files={files} owner={owner} repo={repo} />
+        </Suspense>
+      ) : (
+        <>
+          {/* Grid of variant panels */}
+          <div className={`grid ${colsClass} gap-4`}>
+            {entries.map(([variantName, file]) => (
+              <VariantCodePanel
+                key={variantName}
+                variantName={variantName}
+                file={file}
+                owner={owner}
+                repo={repo}
+                showLineNumbers={showLineNumbers}
+                onClick={() => setSelectedVariant(variantName)}
+              />
+            ))}
+          </div>
+
+          {/* Fullscreen modal */}
+          <FullscreenCode
+            files={files}
             owner={owner}
             repo={repo}
+            selectedVariant={selectedVariant}
             showLineNumbers={showLineNumbers}
-            onClick={() => setSelectedVariant(variantName)}
+            onClose={() => setSelectedVariant(null)}
           />
-        ))}
-      </div>
-
-      {/* Fullscreen modal */}
-      <FullscreenCode
-        files={files}
-        owner={owner}
-        repo={repo}
-        selectedVariant={selectedVariant}
-        showLineNumbers={showLineNumbers}
-        onClose={() => setSelectedVariant(null)}
-      />
+        </>
+      )}
     </>
   );
 }

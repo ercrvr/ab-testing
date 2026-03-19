@@ -64,3 +64,33 @@ html[data-theme="dark"] .shiki span {
   font-size: 0.8em;
   user-select: none;
 }
+
+/* ── Diff view — per-line background highlights ── */
+
+/* Make lines block-level so background spans full width */
+.shiki-wrapper.diff-view .shiki code > .line {
+  display: inline-block;
+  width: 100%;
+  min-width: fit-content;
+  padding-right: 1rem;
+}
+
+/* Added lines — green tint */
+.shiki-wrapper.diff-view .shiki code > .line.diff-added {
+  background-color: oklch(0.87 0.12 145 / 0.2);
+}
+
+/* Removed lines — red tint */
+.shiki-wrapper.diff-view .shiki code > .line.diff-removed {
+  background-color: oklch(0.87 0.12 25 / 0.2);
+  opacity: 0.7;
+}
+
+/* Dark mode: stronger diff tints */
+html[data-theme="dark"] .shiki-wrapper.diff-view .shiki code > .line.diff-added {
+  background-color: oklch(0.45 0.15 145 / 0.3);
+}
+
+html[data-theme="dark"] .shiki-wrapper.diff-view .shiki code > .line.diff-removed {
+  background-color: oklch(0.45 0.15 25 / 0.3);
+}
