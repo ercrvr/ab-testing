@@ -1,6 +1,6 @@
 # A/B Testing Dashboard — Developer Specification
 
-> **Version:** 1.2
+> **Version:** 1.3
 > **Last Updated:** 2026-03-19
 > **Status:** Phase 3 Complete (Core Navigation & Data Discovery)
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
@@ -311,7 +311,8 @@ export interface TestDetail {
 // ─── Files ──────────────────────────────────────────────
 
 export interface DiscoveredFile {
-  path: string;            // relative path within variant dir, e.g., "png/icon-32.png"
+  path: string;            // relative path within variant dir, e.g., "png/icon-32.png" — used for file matching
+  repoPath: string;        // full path within repo, e.g., "examples/tests/test2/claude/post.md" — used for API calls
   name: string;            // filename only, e.g., "icon-32.png"
   extension: string;       // lowercase extension, e.g., "png"
   size: number;            // bytes
@@ -1030,7 +1031,7 @@ interface UseQueryResult<T> {
 - `useProjects(owner, repo, defaultBranch)` → `UseQueryResult<Project[]>`
 - `useTests(owner, repo, project, defaultBranch)` → `UseQueryResult<TestSummary[]>`
 - `useTestData(owner, repo, project, testId, defaultBranch)` → `UseQueryResult<TestDetail>`
-- `useFileContent(owner, repo, filePath, defaultBranch)` → `UseQueryResult<string>` *(Phase 4 — not yet implemented; will wrap `getFileContent()` from `lib/github.ts`)*
+- `useFileContent(owner, repo, filePath)` → `{ content: string | null, isLoading: boolean, error: string | null }` *(✅ Implemented — wraps `getFileContent()` from `lib/github.ts`, cancellation-safe)*
 
 Hooks fetch data on mount (or when params change) and cache results.
 
@@ -1535,30 +1536,34 @@ Build in this order. Each phase produces a testable increment.
 26. **Checkpoint:** Can navigate from repo → projects → tests ✅
 
 ### Phase 4: Content Renderers
-27. Install `react-markdown`, `remark-gfm`, `shiki` *(dependencies installed ✅ — renderers not yet implemented)*
-28. Implement `ImageRenderer.tsx` + `Lightbox.tsx`
-29. Implement `ImageSlider.tsx` (overlay comparison)
-30. Implement `MarkdownRenderer.tsx`
-31. Implement `CodeRenderer.tsx` (Shiki syntax highlighting)
-32. Implement `DiffRenderer.tsx` (side-by-side + unified)
-33. Implement `JsonDiff.tsx` (structural tree diff)
-34. Implement `CsvTable.tsx` (sortable table + cell diff)
-35. Implement `PdfViewer.tsx`
-36. Implement `HtmlPreview.tsx` (sandboxed iframe)
-37. Implement `AudioPlayer.tsx` + `VideoPlayer.tsx`
-38. Implement `BinaryInfo.tsx` (fallback)
-39. **Checkpoint:** All content types rendering correctly
+27. Install `react-markdown`, `remark-gfm`, `shiki` ✅ *(dependencies installed)*
+28. Implement `FullscreenModal.tsx` ✅ *(pulled forward from Phase 5 — dialog-based, ESC/backdrop close, scrollable)*
+29. Implement `FileGroupRenderer.tsx` ✅ *(pulled forward from Phase 5 — dispatcher routing FileGroup → renderer by contentType)*
+30. Implement `useFileContent.ts` hook ✅ *(wraps getFileContent(), returns { content, isLoading, error }, cancellation-safe)*
+31. Implement `ImageRenderer.tsx` ✅ *(grid layout, lazy loading, file size + dimensions, click-to-fullscreen, Grid/Slider toggle)*
+32. Implement `ImageSlider.tsx` ✅ *(draggable vertical divider, CSS clip-path, pointer capture, variant selector dropdowns)*
+33. Implement `MarkdownRenderer.tsx` ✅ *(rendered/source toggle, react-markdown + remark-gfm, DaisyUI prose, fullscreen)*
+34. Update `TestComparison.tsx` ✅ *(expandable/collapsible file group cards, passes owner/repo to renderers)*
+35. Implement `CodeRenderer.tsx` (Shiki syntax highlighting)
+36. Implement `DiffRenderer.tsx` (side-by-side + unified)
+37. Implement `JsonDiff.tsx` (structural tree diff)
+38. Implement `CsvTable.tsx` (sortable table + cell diff)
+39. Implement `PdfViewer.tsx`
+40. Implement `HtmlPreview.tsx` (sandboxed iframe)
+41. Implement `AudioPlayer.tsx` + `VideoPlayer.tsx`
+42. Implement `BinaryInfo.tsx` (fallback)
+43. **Checkpoint:** All content types rendering correctly
 
 ### Phase 5: Comparison Engine
-40. Install `diff` package
-41. Implement `lib/diff.ts` (line diff, word diff, JSON structural diff)
-42. Implement file matching algorithm (N-variant exact path matching)
-43. Build `TestComparison.tsx` layout (sections A-D)
-44. Build `ResultsNarrative.tsx` (side-by-side results.md)
-45. Build `FileGroupView.tsx` (routes matched files to correct renderer)
-46. Build `FullscreenModal.tsx` (fullscreen content popup)
-47. Build `UnmatchedFiles.tsx` ("Only in {variant}" sections)
-48. **Checkpoint:** Full comparison view working
+44. Install `diff` package
+45. Implement `lib/diff.ts` (line diff, word diff, JSON structural diff)
+46. ~~Implement file matching algorithm~~ ✅ *(completed in Phase 3 — N-variant exact path matching in `discovery.ts`)*
+47. ~~Build `TestComparison.tsx` layout~~ ✅ *(base layout completed in Phase 4 — expandable file group cards with renderer routing)*
+48. Build `ResultsNarrative.tsx` (side-by-side results.md)
+49. ~~Build `FileGroupView.tsx`~~ ✅ *(implemented as `FileGroupRenderer.tsx` in Phase 4)*
+50. ~~Build `FullscreenModal.tsx`~~ ✅ *(pulled forward to Phase 4)*
+51. Build `UnmatchedFiles.tsx` ("Only in {variant}" sections)
+52. **Checkpoint:** Full comparison view working
 
 ### Phase 6: Polish & UX
 49. Dark/light theme toggle (useTheme.ts) — system detection + manual override

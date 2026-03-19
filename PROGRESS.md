@@ -1,7 +1,7 @@
 # A/B Testing Dashboard — Progress Tracker
 
 > **Last Updated:** 2026-03-19
-> **Current Phase:** Phase 3 Complete · Phase 4 Not Started
+> **Current Phase:** Phase 3 Complete · Phase 4 In Progress
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
 ---
@@ -153,9 +153,13 @@
 ### Phase 4: Content Renderers
 | Task | Status | Notes |
 |---|---|---|
-| `ImageRenderer.tsx` | ⬜ | Display + lightbox |
-| `ImageSlider.tsx` | ⬜ | Overlay slider comparison (pick any 2 variants) |
-| `MarkdownRenderer.tsx` | ⬜ | react-markdown + remark-gfm |
+| `FullscreenModal.tsx` | ✅ | Shared dialog-based modal — ESC/backdrop close, scrollable, X button. Pulled forward from Phase 5. PR #19 |
+| `FileGroupRenderer.tsx` | ✅ | Dispatcher routing `FileGroup` → correct renderer by `contentType`. Accepts `owner`/`repo` props for content fetching. Pulled forward from Phase 5. PRs #19, #20 |
+| `useFileContent.ts` hook | ✅ | React hook wrapping `getFileContent()` — returns `{ content, isLoading, error }`. Cancellation-safe. PRs #20, #21 |
+| `ImageRenderer.tsx` | ✅ | Grid layout with lazy loading, file size + dimensions on load, click-to-fullscreen. Grid/Slider toggle bar. PRs #19, #19 |
+| `ImageSlider.tsx` | ✅ | Draggable vertical divider overlay — CSS `clip-path`, pointer capture, variant selector dropdowns, corner labels. PR #19 |
+| `MarkdownRenderer.tsx` | ✅ | Rendered/Source toggle, `react-markdown` + `remark-gfm`, DaisyUI `prose` styling, responsive variant grid, fullscreen. PR #20 |
+| `TestComparison.tsx` update | ✅ | Matched file groups are expandable/collapsible cards with chevron icons. Passes `owner`/`repo` to renderers. PRs #19, #20 |
 | `CodeRenderer.tsx` | ⬜ | Shiki syntax highlighting |
 | `DiffRenderer.tsx` | ⬜ | Side-by-side + unified diff |
 | `JsonDiff.tsx` | ⬜ | Structural tree diff |
@@ -172,12 +176,12 @@
 | Task | Status | Notes |
 |---|---|---|
 | Implement `lib/diff.ts` | ⬜ | Line diff, word diff, JSON structural diff |
-| Implement file matching algorithm | ⬜ | See Dev Spec §10: N-variant exact path matching |
-| Build `FileGroupView.tsx` | ⬜ | Routes matched file groups to correct renderer (N-variant grid) |
-| Build `FullscreenModal.tsx` | ⬜ | Fullscreen popup for viewing content at full size |
+| Implement file matching algorithm | ✅ | N-variant exact path matching — completed in Phase 3 (`discovery.ts`) |
+| Build `FileGroupView.tsx` | ✅ | Implemented as `FileGroupRenderer.tsx` — pulled forward to Phase 4 |
+| Build `FullscreenModal.tsx` | ✅ | Pulled forward to Phase 4 |
 | Build `UnmatchedFiles.tsx` | ⬜ | "Only in {variant}" sections per variant |
 | Build `ResultsNarrative.tsx` | ⬜ | Grid of results.md rendering (one per variant) |
-| Build `TestComparison.tsx` page | ⬜ | Full comparison view — the main event |
+| Build `TestComparison.tsx` page | ✅ | Base layout completed in Phase 4 — expandable file group cards with renderer routing |
 
 ---
 
@@ -222,6 +226,9 @@
 | 2026-03-19 | Custom fetch wrapper for rate limit headers | Octokit throws on 304 responses before headers are accessible. Intercepting at fetch level captures rate limit from ALL responses |
 | 2026-03-19 | Window-aware rate limit tracking (10-min threshold) | GitHub LB returns different reset timestamps (~4 min apart) from different backends. Treating < 10 min diff as same window prevents UI jumps |
 | 2026-03-19 | sessionStorage for rate limit persistence | Rate limit data survives tab kills but not new sessions. sessionStorage is appropriate since rate limit window is hourly |
+| 2026-03-19 | Pull FullscreenModal + FileGroupRenderer into Phase 4 | Renderers need these components immediately — waiting for Phase 5 would block all renderer work |
+| 2026-03-19 | `repoPath` field on DiscoveredFile (separate from `path`) | `path` stores relative path for file matching, `repoPath` stores full repo path for API calls. Both are needed — merging them would break one use case |
+| 2026-03-19 | CSS `clip-path` for ImageSlider | Clean, performant image clipping with no extra DOM elements. Pointer capture for smooth dragging |
 | 2026-03-19 | Pathname parsing for Breadcrumbs (not useParams) | Breadcrumbs component lives outside `<Routes>` so `useParams()` doesn't work. Parsing `location.pathname` directly |
 | 2026-03-19 | History depth tracking via location.state | Breadcrumbs need to pop exact number of history entries. Each navigation passes `repoNavDepth` in state, `history.go(-depth)` pops back |
 
@@ -265,6 +272,25 @@
 - Inline error handling for auth failures
 - `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
 - GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
+
+### 2026-03-19: Phase 4 In Progress (Renderers 4.1–4.4)
+- **Infrastructure (pulled forward from Phase 5):**
+  - `FullscreenModal.tsx`: Shared dialog-based modal — ESC/backdrop close, scrollable, X button
+  - `FileGroupRenderer.tsx`: Dispatcher routing `FileGroup` → correct renderer by `contentType`
+  - `TestComparison.tsx`: Matched file groups as expandable/collapsible cards with chevron icons
+- **Renderers:**
+  - `ImageRenderer.tsx`: Grid layout with lazy loading, file size + natural dimensions on load, click-to-fullscreen
+  - `ImageSlider.tsx`: Draggable vertical divider overlay — CSS `clip-path`, pointer capture, variant selector dropdowns, corner labels
+  - `MarkdownRenderer.tsx`: Rendered/Source toggle, `react-markdown` + `remark-gfm`, DaisyUI `prose` styling, fullscreen
+- **Hooks:**
+  - `useFileContent.ts`: React hook wrapping `getFileContent()` — returns `{ content, isLoading, error }`, cancellation-safe
+- **Types:**
+  - Added `repoPath` field to `DiscoveredFile` — full repo path for API calls (vs `path` which is relative for file matching)
+- **Bugs Fixed:**
+  - Content fetching 404s on text-based renderers — `file.path` was relative (`"post.md"`), but `getFileContent()` needs full repo path (`"examples/tests/test2/claude/post.md"`). Fixed by adding `repoPath` field
+- **Test Data:**
+  - Generated 74 test files in `ercrvr/ab-tests` repo covering all 9 content types (images, markdown, code, data, HTML, plaintext, PDF, audio, video)
+- **PRs:** #19 (ImageRenderer + ImageSlider + FullscreenModal + FileGroupRenderer), #20 (MarkdownRenderer + useFileContent), #21 (repoPath bugfix)
 
 ### 2026-03-19: Phase 3 Complete
 - **Core Libraries:**
