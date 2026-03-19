@@ -85,7 +85,10 @@ export interface VariantData {
 
 export interface DiscoveredFile {
   name: string;
+  /** Relative path within the variant directory (e.g. "post.md") — used for file matching */
   path: string;
+  /** Full path within the repo (e.g. "examples/tests/test2/claude/post.md") — used for API calls */
+  repoPath: string;
   sha: string;
   size: number;
   extension: string;
