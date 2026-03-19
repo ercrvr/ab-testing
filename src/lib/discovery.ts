@@ -159,6 +159,7 @@ function getVariantFiles(
     files.push({
       name,
       path: relativePath,
+      repoPath: entry.path,
       sha: entry.sha,
       size: entry.size ?? 0,
       extension: ext,

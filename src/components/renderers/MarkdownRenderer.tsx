@@ -32,7 +32,7 @@ function VariantPanel({
   viewMode: ViewMode;
   onClick: () => void;
 }) {
-  const { content, isLoading, error } = useFileContent(owner, repo, file.path);
+  const { content, isLoading, error } = useFileContent(owner, repo, file.repoPath);
 
   return (
     <div
@@ -149,7 +149,7 @@ function FullscreenMarkdown({
   const { content } = useFileContent(
     selectedVariant ? owner : undefined,
     selectedVariant ? repo : undefined,
-    file?.path,
+    file?.repoPath,
   );
 
   return (
