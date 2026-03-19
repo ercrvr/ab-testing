@@ -72,7 +72,7 @@ Authenticate → Select Repo → Browse Projects → Browse Tests → Compare Va
 | Component Library | `daisyui` | ^5.5 | Pre-built Tailwind components | ✅ Phase 1 |
 | Routing | `react-router-dom` | ^7.x | Client-side routing (hash mode) | ✅ Phase 1 |
 | Icons | `lucide-react` | ^0.400+ | Icon set | ✅ Phase 1 |
-| GitHub API | `@octokit/rest` | ^21.x | Official GitHub REST API client | Phase 3 |
+| GitHub API | `@octokit/rest` | ^21.x | Official GitHub REST API client | ✅ Phase 3 |
 | Markdown | `react-markdown` | ^9.x | Render `.md` files | Phase 4 |
 | Markdown Plugins | `remark-gfm` | ^4.x | GitHub Flavored Markdown (tables, strikethrough, etc.) | Phase 4 |
 | Syntax Highlighting | `shiki` | ^1.x | Code syntax highlighting for diffs and code viewers | Phase 4 |
@@ -116,17 +116,19 @@ ercrvr/ab-testing/
 │   ├── types.ts                         # All shared TypeScript interfaces/types
 │   │
 │   ├── lib/
-│   │   ├── github.ts                    # Octokit wrapper: auth, API calls, rate limit handling
-│   │   ├── discovery.ts                 # Repo tree walker: find projects, tests, files
-│   │   ├── diff.ts                      # Diff engine: line diff, word diff, structural JSON diff
-│   │   ├── content-type.ts              # Extension → renderer mapping + MIME type detection
-│   │   └── cache.ts                     # localStorage cache with ETag support
+│   │   ├── github.ts                    # Octokit wrapper: auth, API calls, custom fetch for rate limit capture, window-aware RL tracking, sessionStorage persistence
+│   │   ├── discovery.ts                 # Repo tree walker: find projects, tests, files, file matching
+│   │   ├── diff.ts                      # Diff engine: line diff, word diff, structural JSON diff (Phase 5)
+│   │   ├── content-type.ts              # Extension → ContentType mapping + getShikiLanguage()
+│   │   └── cache.ts                     # localStorage cache with ETag support + TTL + auto-eviction
 │   │
 │   ├── hooks/
-│   │   ├── useRepo.ts                   # Selected repo state
+│   │   ├── useRepo.ts                   # Selected repo state with localStorage persistence
 │   │   ├── useProjects.ts               # Project discovery for a repo
 │   │   ├── useTests.ts                  # Test listing for a project
 │   │   ├── useTestData.ts              # On-demand file content fetching for a single test
+│   │   ├── useRateLimit.ts              # Rate limit subscription with reset countdown
+│   │   ├── useCacheStatus.ts            # Data source tracking (cache/api/etag-revalidated/stale-fallback)
 │   │   └── useTheme.ts                  # Dark/light mode state
 │   │
 │   ├── context/
@@ -144,6 +146,9 @@ ercrvr/ab-testing/
 │       │   ├── Header.tsx               # Top nav: logo, breadcrumbs, theme toggle, user avatar
 │       │   ├── Breadcrumbs.tsx           # Clickable navigation trail
 │       │   └── Footer.tsx               # Minimal footer
+│       │
+│       ├── debug/
+│       │   └── DebugOverlay.tsx          # Error-triggered debug panel: fetch/storage/history interceptors
 │       │
 │       ├── renderers/
 │       │   ├── ImageRenderer.tsx         # Image display + lightbox on click
@@ -725,23 +730,36 @@ Clear all `ab-dashboard-*` keys from localStorage and redirect to landing page.
 ### 8.1 Header (`layout/Header.tsx`)
 
 ```
-Props: none (reads from context)
+Props: none (reads from context/hooks)
 ```
 
-Fixed top bar. Contains:
-- **Left:** App logo/icon + app name ("A/B Testing Dashboard")
-- **Center:** Breadcrumbs component
-- **Right:** ThemeToggle + user avatar dropdown (logout option)
-
-If not authenticated, only show logo and theme toggle.
+Sticky top bar with backdrop blur. Contains:
+- **Left:** FlaskConical icon + app name "A/B Testing" + LAB badge (hidden on mobile)
+- **Right (authenticated):**
+  - Cache source indicator: colored dot + label (`live`/`cached`/`revalidated`/`stale`) via `useCacheStatus()`
+  - Rate limit: Gauge icon + remaining count + middot + reset countdown (e.g., `4,834 · 47m`) via `useRateLimit()`. Color-coded green/yellow/red based on remaining
+  - Theme toggle (Sun/Moon icon)
+  - User avatar dropdown with logout
+- **Right (unauthenticated):** Theme toggle only
+- **Below navbar:** `<Breadcrumbs />` component in a separate always-visible bar
 
 ### 8.2 Breadcrumbs (`layout/Breadcrumbs.tsx`)
 
 ```
-Props: none (reads from URL params)
+Props: none (reads from location)
 ```
 
-Auto-generates from current route. Each segment is clickable.
+Auto-generates breadcrumb trail from `location.pathname` (parses segments directly — `useParams()` doesn't work here because the component lives outside `<Routes>`). Each segment is clickable.
+
+**History depth tracking:** Each navigation level passes `repoNavDepth` in `location.state`. Clicking a breadcrumb calls `history.go(-(currentDepth - targetDepth))` to pop the exact number of entries, keeping browser back/forward buttons consistent.
+
+**Segments:**
+- `Repos` (depth 0) — clears selected repo
+- `owner/repo` (depth 1)
+- `Project Name` (depth 2, title-cased from directory name)
+- `Test N` (depth 3)
+
+Only shows on pages deeper than `/repos`. Hidden on landing page.
 
 Example: `Repos` > `ercrvr/ab-testing` > `Icon Generation` > `Test 1`
 
@@ -842,8 +860,9 @@ const CONTENT_TYPE_MAP: Record<string, ContentType> = {
   mp4: 'video', webm: 'video', mov: 'video',
 };
 
-export function getContentType(extension: string): ContentType {
-  return CONTENT_TYPE_MAP[extension.toLowerCase()] ?? 'binary';
+export function getContentType(filename: string): ContentType {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  return CONTENT_TYPE_MAP[ext] ?? 'binary';
 }
 
 export function getShikiLanguage(ext: string): string {
@@ -1031,20 +1050,38 @@ function useTheme(): {
 
 ### API Client (`lib/github.ts`)
 
+The GitHub API client module provides:
+
+1. **Octokit initialization** with a custom fetch wrapper that captures rate limit headers from every response (including 304 Not Modified — Octokit throws before headers are accessible on 304s)
+2. **Rate limit tracking** with window-aware logic: GitHub's load balancer routes requests to different backends that report slightly different reset timestamps (~4 min skew). A 10-minute threshold classifies same-window vs new-window:
+   - Reset diff < 10 min: same window → `remaining = min(current, incoming)` (can only go down)
+   - Reset diff > 10 min: new window (hourly rollover) → accept all values
+   - Incoming reset much older: stale → ignore completely
+3. **SessionStorage persistence**: Rate limit data survives tab kills (`ab-rate-limit` key)
+4. **Pub/sub pattern**: `subscribeRateLimit()` and `subscribeDataSource()` for reactive UI updates
+5. **Data source tracking**: Reports whether data came from `cache`, `api`, `etag-revalidated`, or `stale-fallback`
+6. **ETag caching**: All data-fetching functions (`getRepo`, `getRepoTree`, `getFileContent`) use conditional requests with `If-None-Match` headers. On 304, cached data is refreshed. On network failure, stale cache is returned as fallback.
+
 ```typescript
-import { Octokit } from '@octokit/rest';
+// Key exports
+export function initOctokit(token: string): void;       // Creates Octokit with custom fetch
+export function clearOctokit(): void;                     // Clears instance on logout
+export function getOctokit(): Octokit;                    // Throws if not initialized
 
-let octokitInstance: Octokit | null = null;
+// Rate limit
+export function getRateLimitInfo(): RateLimitInfo;
+export function subscribeRateLimit(listener: () => void): () => void;
+export function fetchRateLimit(): Promise<RateLimitInfo>; // Explicit fetch via GET /rate_limit
 
-export function initOctokit(token: string): Octokit {
-  octokitInstance = new Octokit({ auth: token });
-  return octokitInstance;
-}
+// Data source
+export function getLastDataSource(): DataSourceEvent | null;
+export function subscribeDataSource(listener: () => void): () => void;
 
-export function getOctokit(): Octokit {
-  if (!octokitInstance) throw new Error('Not authenticated');
-  return octokitInstance;
-}
+// API wrappers (all with ETag caching)
+export function listUserRepos(page?: number, perPage?: number): Promise<Repo[]>;
+export function getRepo(owner: string, repo: string): Promise<Repo>;
+export function getRepoTree(owner: string, repo: string, branch: string): Promise<GitHubTreeEntry[]>;
+export function getFileContent(owner: string, repo: string, path: string): Promise<string>;
 ```
 
 ### Key API Calls
@@ -1060,9 +1097,16 @@ export function getOctokit(): Octokit {
 
 ### Rate Limiting
 
-- Authenticated requests: **5,000/hour**
-- Display remaining rate limit in the header or footer (fetch via `GET /rate_limit`)
+- Authenticated requests: **5,000/hour** (per token, not per IP)
+- Rate limit is tracked from response headers on **every** fetch (including 304s) via custom fetch wrapper
+- **Window-aware tracking**: GitHub LB skew handled with 10-minute threshold — prevents displayed value from jumping when different backend servers return slightly different remaining counts
+- **SessionStorage persistence**: Rate limit data survives tab kills via `ab-rate-limit` sessionStorage key
+- **UI display**: Header shows `remaining · resetMinutes` (e.g., `4,834 · 47m`) with color coding:
+  - Green: > 500 remaining
+  - Yellow: 100–500 remaining
+  - Red: < 100 remaining
 - If rate limited (HTTP 403 with `X-RateLimit-Remaining: 0`), show a clear error message with reset time
+- `useRateLimit` hook provides reactive state with 30-second countdown tick
 
 ### Binary vs Text Content
 
@@ -1091,6 +1135,7 @@ const CACHE_PREFIX = 'ab-cache:';
 // Cache TTLs
 const TTL = {
   REPO_LIST: 5 * 60 * 1000,        // 5 minutes
+  REPO_TREE: 10 * 60 * 1000,       // 10 minutes
   PROJECT_LIST: 10 * 60 * 1000,    // 10 minutes
   TEST_LIST: 10 * 60 * 1000,       // 10 minutes
   FILE_CONTENT: 30 * 60 * 1000,    // 30 minutes
