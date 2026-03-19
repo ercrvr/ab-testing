@@ -1,6 +1,7 @@
 import type { FileGroup } from '../../types';
 import { ImageRenderer } from './ImageRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { CodeRenderer } from './CodeRenderer';
 
 interface FileGroupRendererProps {
   group: FileGroup;
@@ -15,6 +16,10 @@ export function FileGroupRenderer({ group, owner, repo }: FileGroupRendererProps
       return <ImageRenderer files={group.files} />;
     case 'markdown':
       return <MarkdownRenderer files={group.files} owner={owner} repo={repo} />;
+    case 'code':
+    case 'plaintext':
+    case 'xml':
+      return <CodeRenderer files={group.files} owner={owner} repo={repo} />;
     default:
       return (
         <div className="border border-base-300 rounded-box p-6 text-center text-base-content/50">

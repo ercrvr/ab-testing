@@ -27,3 +27,40 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+
+/* ── Shiki dual-theme integration with DaisyUI ── */
+
+/* Base shiki wrapper */
+.shiki-wrapper .shiki {
+  padding: 1rem;
+  margin: 0;
+  overflow-x: auto;
+  border-radius: 0;
+}
+
+/* Dark mode: swap to Shiki's --shiki-dark CSS variables */
+html[data-theme="dark"] .shiki,
+html[data-theme="dark"] .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* Line numbers via CSS counters */
+.shiki-wrapper.line-numbers .shiki code {
+  counter-reset: line;
+}
+
+.shiki-wrapper.line-numbers .shiki code > .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2.5rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: oklch(0.6 0 0 / 0.4);
+  font-size: 0.8em;
+  user-select: none;
+}
