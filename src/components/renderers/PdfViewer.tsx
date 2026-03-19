@@ -1,249 +1,280 @@
-import { useState, useEffect } from 'react';
-import { Maximize2, FileText, ExternalLink, Download, AlertTriangle } from 'lucide-react';
-import type { DiscoveredFile } from '../../types';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { FileText, ExternalLink, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { FileGroup, DiscoveredFile } from '../../types';
 import { FullscreenModal } from './FullscreenModal';
 
-/* ── Helpers ── */
+/* ------------------------------------------------------------------ */
+/*  PDF.js dynamic import – keeps it out of the main bundle           */
+/* ------------------------------------------------------------------ */
+type PDFDocumentProxy = import('pdfjs-dist').PDFDocumentProxy;
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+
+function loadPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url,
+      ).toString();
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
 }
 
-/**
- * Hook: fetches a PDF from a raw URL as binary,
- * re-wraps it as a Blob with the correct MIME type,
- * and returns a local object URL the browser can render inline.
- *
- * raw.githubusercontent.com serves PDFs as application/octet-stream,
- * which prevents <embed> and <iframe> from using the browser's built-in
- * PDF viewer. Creating a Blob URL with the correct MIME fixes this.
- */
-function usePdfBlobUrl(downloadUrl: string | undefined) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+/* ------------------------------------------------------------------ */
+/*  usePdfDocument – fetches + parses a PDF into a PDFDocumentProxy   */
+/* ------------------------------------------------------------------ */
+function usePdfDocument(url: string | undefined) {
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!downloadUrl) return;
-
+    if (!url) return;
     let cancelled = false;
-    let url: string | null = null;
-    setIsLoading(true);
+    setLoading(true);
     setError(null);
-    setBlobUrl(null);
+    setDoc(null);
 
-    fetch(downloadUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
-      })
-      .then((raw) => {
-        if (cancelled) return;
-        // Re-create blob with correct MIME so the browser PDF viewer kicks in
-        const pdfBlob = new Blob([raw], { type: 'application/pdf' });
-        url = URL.createObjectURL(pdfBlob);
-        setBlobUrl(url);
-        setIsLoading(false);
+    loadPdfJs()
+      .then((pdfjs) => pdfjs.getDocument(url).promise)
+      .then((pdf) => {
+        if (!cancelled) { setDoc(pdf); setLoading(false); }
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load PDF');
-          setIsLoading(false);
-        }
+        if (!cancelled) { setError(String(err)); setLoading(false); }
       });
 
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [downloadUrl]);
+    return () => { cancelled = true; };
+  }, [url]);
 
-  return { blobUrl, isLoading, error };
+  return { doc, error, loading };
 }
 
-/** Detect mobile/touch devices where inline PDF rendering rarely works */
-function isMobileDevice(): boolean {
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-    (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-}
-
-/* ── PDF iframe panel ── */
-
-function PdfFrame({ url, title, height = '24rem' }: { url: string; title: string; height?: string }) {
-  return (
-    <iframe
-      src={url}
-      title={title}
-      className="w-full border-0 rounded"
-      style={{ height, minHeight: '12rem' }}
-    />
-  );
-}
-
-/* ── Mobile fallback: download + open link ── */
-
-function MobileFallback({ file }: { file: DiscoveredFile }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-8 text-base-content/60">
-      <FileText size={48} className="text-primary/40" />
-      <p className="text-sm text-center">
-        Inline PDF preview is not available on this device.
-      </p>
-      <a
-        href={file.downloadUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="btn btn-primary btn-sm gap-2"
-      >
-        <Download size={14} />
-        Open PDF
-      </a>
-    </div>
-  );
-}
-
-/* ── Variant panel ── */
-
-function VariantPanel({
-  variantName,
-  file,
-  onClick,
+/* ------------------------------------------------------------------ */
+/*  PdfCanvas – renders a single PDF page onto a <canvas>            */
+/* ------------------------------------------------------------------ */
+function PdfCanvas({
+  doc,
+  pageNum,
+  maxWidth,
 }: {
-  variantName: string;
-  file: DiscoveredFile;
-  onClick: () => void;
+  doc: PDFDocumentProxy;
+  pageNum: number;
+  maxWidth: number;
 }) {
-  const mobile = isMobileDevice();
-  const { blobUrl, isLoading, error } = usePdfBlobUrl(mobile ? undefined : file.downloadUrl);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    doc.getPage(pageNum).then((page) => {
+      if (cancelled || !canvasRef.current) return;
+      const viewport = page.getViewport({ scale: 1 });
+      const scale = Math.min(maxWidth / viewport.width, 2);
+      const scaled = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      canvas.width = scaled.width;
+      canvas.height = scaled.height;
+      canvas.style.width = `${scaled.width / window.devicePixelRatio}px`;
+      canvas.style.height = `${scaled.height / window.devicePixelRatio}px`;
+      const ctx = canvas.getContext('2d')!;
+      page.render({ canvasContext: ctx, viewport: scaled });
+    });
+    return () => { cancelled = true; };
+  }, [doc, pageNum, maxWidth]);
+
+  return <canvas ref={canvasRef} className="mx-auto block" />;
+}
+
+/* ------------------------------------------------------------------ */
+/*  PdfPanel – per-variant PDF viewer with page navigation            */
+/* ------------------------------------------------------------------ */
+function PdfPanel({
+  file,
+  maxWidth,
+}: {
+  file: DiscoveredFile;
+  maxWidth: number;
+}) {
+  const { doc, error, loading } = usePdfDocument(file.downloadUrl);
+  const [page, setPage] = useState(1);
+  const totalPages = doc?.numPages ?? 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-base-content/50">
+        <span className="loading loading-spinner loading-sm" />
+        Loading PDF…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-warning">
+        <FileText size={32} />
+        <p className="text-sm">Failed to load PDF</p>
+        <a
+          href={file.downloadUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-primary btn-sm gap-2"
+        >
+          <ExternalLink size={14} /> Open PDF
+        </a>
+      </div>
+    );
+  }
+
+  if (!doc) return null;
 
   return (
-    <div
-      className="border border-base-300 rounded-box overflow-hidden bg-base-100 cursor-pointer hover:border-primary/30 transition-colors"
-      onClick={onClick}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-base-200/50 border-b border-base-300">
-        <div className="flex items-center gap-2">
-          <span className="lab-label text-primary">{variantName}</span>
-          <span className="text-xs text-base-content/40">
-            {file.name}
-            {file.size > 0 && ` · ${formatFileSize(file.size)}`}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={file.downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex flex-col gap-2">
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
             className="btn btn-ghost btn-xs"
-            onClick={(e) => e.stopPropagation()}
-            title="Open in new tab"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
-            <ExternalLink size={14} />
-          </a>
-          <Maximize2 size={14} className="text-base-content/30" />
+            <ChevronLeft size={14} />
+          </button>
+          <span className="text-xs text-base-content/60 font-mono">
+            {page} / {totalPages}
+          </span>
+          <button
+            className="btn btn-ghost btn-xs"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            <ChevronRight size={14} />
+          </button>
         </div>
-      </div>
+      )}
 
-      {/* PDF content area */}
-      <div onClick={(e) => e.stopPropagation()}>
-        {mobile ? (
-          <MobileFallback file={file} />
-        ) : isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="loading loading-spinner loading-md text-primary" />
-          </div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-8 text-warning">
-            <AlertTriangle size={24} />
-            <p className="text-sm">{error}</p>
-            <a
-              href={file.downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm btn-ghost gap-1"
-            >
-              <Download size={14} /> Download instead
-            </a>
-          </div>
-        ) : blobUrl ? (
-          <PdfFrame url={blobUrl} title={`${variantName} — ${file.name}`} />
-        ) : null}
-      </div>
-
-      {/* Footer */}
-      <div className="px-3 py-2 border-t border-base-300 flex items-center gap-2 text-xs text-base-content/50">
-        <FileText size={14} />
-        <span>PDF Document</span>
+      <div className="overflow-auto rounded bg-base-200/30 p-2" style={{ maxHeight: '70vh' }}>
+        <PdfCanvas doc={doc} pageNum={page} maxWidth={maxWidth} />
       </div>
     </div>
   );
 }
 
-/* ── Main PdfViewer renderer ── */
+/* ------------------------------------------------------------------ */
+/*  FullscreenPdf – fullscreen variant                                */
+/* ------------------------------------------------------------------ */
+function FullscreenPdf({ file }: { file: DiscoveredFile }) {
+  const { doc, error, loading } = usePdfDocument(file.downloadUrl);
+  const [page, setPage] = useState(1);
+  const totalPages = doc?.numPages ?? 0;
 
-interface PdfViewerProps {
-  files: Record<string, DiscoveredFile>;
-}
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-24 text-base-content/50">
+        <span className="loading loading-spinner loading-md" />
+        Loading PDF…
+      </div>
+    );
+  }
 
-export function PdfViewer({ files }: PdfViewerProps) {
-  const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
-
-  const entries = Object.entries(files);
-  const selectedFile = selectedVariant ? files[selectedVariant] : undefined;
-
-  const mobile = isMobileDevice();
-  const { blobUrl: fsBlobUrl } = usePdfBlobUrl(
-    !mobile && selectedFile ? selectedFile.downloadUrl : undefined,
-  );
-
-  const colsClass =
-    entries.length === 1
-      ? 'grid-cols-1'
-      : entries.length === 2
-        ? 'grid-cols-1 md:grid-cols-2'
-        : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3';
+  if (error || !doc) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-warning">
+        <FileText size={40} />
+        <p>Failed to load PDF</p>
+        <a href={file.downloadUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm gap-2">
+          <ExternalLink size={14} /> Open PDF
+        </a>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div className={`grid ${colsClass} gap-4`}>
+    <div className="flex flex-col gap-3 h-full">
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-sm text-base-content/60 font-mono">{page} / {totalPages}</span>
+          <button className="btn btn-ghost btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+      <div className="overflow-auto flex-1 rounded bg-base-200/30 p-4" style={{ maxHeight: '80vh' }}>
+        <PdfCanvas doc={doc} pageNum={page} maxWidth={900} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  PdfViewer – main renderer                                         */
+/* ------------------------------------------------------------------ */
+export default function PdfViewer({ group }: { group: FileGroup }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(600);
+  const [fullscreenFile, setFullscreenFile] = useState<{ variantName: string; file: DiscoveredFile } | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(([e]) => setContainerWidth(e.contentRect.width));
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const entries = Object.entries(group.files);
+  const cols = entries.length === 1 ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2';
+  const panelMaxWidth = entries.length === 1 ? containerWidth : Math.floor(containerWidth / 2) - 16;
+
+  const openFullscreen = useCallback((variantName: string, file: DiscoveredFile) => {
+    setFullscreenFile({ variantName, file });
+  }, []);
+
+  return (
+    <div ref={containerRef}>
+      <div className={`grid ${cols} gap-4`}>
         {entries.map(([variantName, file]) => (
-          <VariantPanel
-            key={variantName}
-            variantName={variantName}
-            file={file}
-            onClick={() => setSelectedVariant(variantName)}
-          />
+          <div key={variantName} className="card bg-base-200/50 border border-base-300 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-base-300 bg-base-200/30 text-xs">
+              <span className="lab-label">{variantName}</span>
+              <span className="truncate opacity-60">{file.name}</span>
+              <span className="ml-auto opacity-50">
+                {file.size < 1024 ? `${file.size} B` : `${(file.size / 1024).toFixed(1)} KB`}
+              </span>
+              <a href={file.downloadUrl} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-xs" title="Open in new tab">
+                <ExternalLink size={12} />
+              </a>
+              <button className="btn btn-ghost btn-xs" title="Fullscreen" onClick={() => openFullscreen(variantName, file)}>
+                <Maximize2 size={12} />
+              </button>
+            </div>
+
+            {/* PDF body */}
+            <div className="p-3">
+              <PdfPanel file={file} maxWidth={panelMaxWidth} />
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-base-300 bg-base-200/10 text-xs opacity-60">
+              <FileText size={12} />
+              PDF Document
+            </div>
+          </div>
         ))}
       </div>
 
+      {/* Fullscreen modal */}
       <FullscreenModal
-        isOpen={selectedVariant !== null}
-        onClose={() => setSelectedVariant(null)}
-        title={
-          selectedFile
-            ? `${selectedVariant} — ${selectedFile.name}`
-            : undefined
-        }
+        isOpen={fullscreenFile !== null}
+        onClose={() => setFullscreenFile(null)}
+        title={fullscreenFile ? `${fullscreenFile.variantName} — ${group.relativePath}` : undefined}
       >
-        {selectedFile && (
-          mobile ? (
-            <MobileFallback file={selectedFile} />
-          ) : fsBlobUrl ? (
-            <PdfFrame
-              url={fsBlobUrl}
-              title={selectedFile.name}
-              height="85vh"
-            />
-          ) : (
-            <div className="flex items-center justify-center py-12">
-              <span className="loading loading-spinner loading-md text-primary" />
-            </div>
-          )
-        )}
+        {fullscreenFile && <FullscreenPdf file={fullscreenFile.file} />}
       </FullscreenModal>
-    </>
+    </div>
   );
 }

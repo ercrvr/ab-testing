@@ -12,9 +12,7 @@ const JsonDiff = lazy(() =>
 const CsvTable = lazy(() =>
   import('./CsvTable').then((m) => ({ default: m.CsvTable })),
 );
-const PdfViewer = lazy(() =>
-  import('./PdfViewer').then((m) => ({ default: m.PdfViewer })),
-);
+const PdfViewer = lazy(() => import('./PdfViewer'));
 
 interface FileGroupRendererProps {
   group: FileGroup;
@@ -48,7 +46,7 @@ export function FileGroupRenderer({ group, owner, repo }: FileGroupRendererProps
     case 'pdf':
       return (
         <Suspense fallback={<LoadingSpinner size="sm" text="Loading PDF viewer..." />}>
-          <PdfViewer files={group.files} />
+          <PdfViewer group={group} />
         </Suspense>
       );
     default:
