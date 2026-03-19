@@ -107,7 +107,7 @@ export function TestComparison() {
                       </button>
                       {isExpanded && (
                         <div className="p-4 border-t border-base-300">
-                          <FileGroupRenderer group={group} />
+                          <FileGroupRenderer group={group} owner={owner!} repo={repo!} />
                         </div>
                       )}
                     </div>
