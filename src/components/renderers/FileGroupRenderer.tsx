@@ -1,7 +1,14 @@
+import { lazy, Suspense } from 'react';
 import type { FileGroup } from '../../types';
 import { ImageRenderer } from './ImageRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CodeRenderer } from './CodeRenderer';
+import { LoadingSpinner } from '../ui/LoadingSpinner';
+
+// Dynamic import for heavier renderers (DEV_SPEC §1498)
+const JsonDiff = lazy(() =>
+  import('./JsonDiff').then((m) => ({ default: m.JsonDiff })),
+);
 
 interface FileGroupRendererProps {
   group: FileGroup;
@@ -20,6 +27,12 @@ export function FileGroupRenderer({ group, owner, repo }: FileGroupRendererProps
     case 'plaintext':
     case 'xml':
       return <CodeRenderer files={group.files} owner={owner} repo={repo} />;
+    case 'json':
+      return (
+        <Suspense fallback={<LoadingSpinner size="sm" text="Loading JSON viewer..." />}>
+          <JsonDiff files={group.files} owner={owner} repo={repo} />
+        </Suspense>
+      );
     default:
       return (
         <div className="border border-base-300 rounded-box p-6 text-center text-base-content/50">
