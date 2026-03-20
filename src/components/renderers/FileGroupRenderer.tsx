@@ -16,6 +16,7 @@ const PdfViewer = lazy(() => import('./PdfViewer'));
 const HtmlPreview = lazy(() =>
   import('./HtmlPreview').then((m) => ({ default: m.HtmlPreview })),
 );
+const AudioPlayer = lazy(() => import('./AudioPlayer'));
 
 interface FileGroupRendererProps {
   group: FileGroup;
@@ -56,6 +57,12 @@ export function FileGroupRenderer({ group, owner, repo }: FileGroupRendererProps
       return (
         <Suspense fallback={<LoadingSpinner size="sm" text="Loading HTML preview..." />}>
           <HtmlPreview files={group.files} owner={owner} repo={repo} />
+        </Suspense>
+      );
+    case 'audio':
+      return (
+        <Suspense fallback={<LoadingSpinner size="sm" text="Loading audio player..." />}>
+          <AudioPlayer group={group} />
         </Suspense>
       );
     default:
