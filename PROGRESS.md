@@ -1,6 +1,6 @@
 # A/B Testing Dashboard — Progress Tracker
 
-> **Last Updated:** 2026-03-19
+> **Last Updated:** 2026-03-20
 > **Current Phase:** Phase 3 Complete · Phase 4 In Progress
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
@@ -160,12 +160,13 @@
 | `ImageSlider.tsx` | ✅ | Draggable vertical divider overlay — CSS `clip-path`, pointer capture, variant selector dropdowns, corner labels. PR #19 |
 | `MarkdownRenderer.tsx` | ✅ | Rendered/Source toggle, `react-markdown` + `remark-gfm`, DaisyUI `prose` styling, responsive variant grid, fullscreen. PR #20 |
 | `TestComparison.tsx` update | ✅ | Matched file groups are expandable/collapsible cards with chevron icons. Passes `owner`/`repo` to renderers. PRs #19, #20 |
-| `CodeRenderer.tsx` | ⬜ | Shiki syntax highlighting |
-| `DiffRenderer.tsx` | ⬜ | Side-by-side + unified diff |
-| `JsonDiff.tsx` | ⬜ | Structural tree diff |
-| `CsvTable.tsx` | ⬜ | Sortable table + cell diff |
-| `PdfViewer.tsx` | ⬜ | Embedded viewer |
-| `HtmlPreview.tsx` | ⬜ | Sandboxed iframe |
+| `lib/shiki.ts` | ✅ | Shiki highlighter initialization — lazy singleton, dual theme (github-light + github-dark-dimmed) via CSS variables. PR #22 |
+| `CodeRenderer.tsx` | ✅ | Shiki syntax highlighting, line numbers toggle, diff mode toggle (lazy-loads DiffRenderer), dark/light theme support, fullscreen. PR #22 |
+| `DiffRenderer.tsx` | ✅ | Line-level diff highlighting with Shiki + `diff` package. Adds/removes get green/red background tints. Lazy-loaded from CodeRenderer to keep `diff` out of main bundle. PR #24 |
+| `JsonDiff.tsx` | ✅ | Collapsible JSON tree with color-coded values (strings green, numbers blue, booleans purple, null red). Lazy-loaded. PR #23 |
+| `CsvTable.tsx` | ✅ | Sortable columns (asc/desc/none cycle), sticky headers, CSV parsing with proper quote/newline handling, responsive variant grid. Lazy-loaded. PR #25 |
+| `PdfViewer.tsx` | ✅ | PDF.js canvas rendering for universal device support (desktop + mobile). Page navigation (prev/next), responsive sizing with ResizeObserver, fullscreen, download link fallback on error. Added `pdfjs-dist` dependency. PRs #26, #27, #28, #29 |
+| `HtmlPreview.tsx` | ✅ | Sandboxed `<iframe srcdoc>` with `allow-scripts`. Preview/Source toggle — Source mode delegates to CodeRenderer for syntax-highlighted HTML. Expand button per variant, fullscreen. Lazy-loaded. PR #30 |
 | `AudioPlayer.tsx` | ⬜ | `<audio>` element |
 | `VideoPlayer.tsx` | ⬜ | `<video>` element |
 | `BinaryInfo.tsx` | ⬜ | Metadata + download link fallback |
@@ -231,6 +232,12 @@
 | 2026-03-19 | CSS `clip-path` for ImageSlider | Clean, performant image clipping with no extra DOM elements. Pointer capture for smooth dragging |
 | 2026-03-19 | Pathname parsing for Breadcrumbs (not useParams) | Breadcrumbs component lives outside `<Routes>` so `useParams()` doesn't work. Parsing `location.pathname` directly |
 | 2026-03-19 | History depth tracking via location.state | Breadcrumbs need to pop exact number of history entries. Each navigation passes `repoNavDepth` in state, `history.go(-depth)` pops back |
+| 2026-03-19 | Shiki dual theme via CSS variables | Single render pass outputs both light/dark colors. CSS swaps `--shiki-dark` vars in dark mode — no re-highlighting needed on theme toggle |
+| 2026-03-19 | Lazy-load DiffRenderer from CodeRenderer | `diff` package (+ Shiki diff logic) stays out of main bundle. Only loaded when user clicks the Diff toggle |
+| 2026-03-19 | React.lazy() for heavy renderers | JsonDiff, CsvTable, PdfViewer, HtmlPreview, DiffRenderer all code-split. Main bundle stays lean, renderers load on demand |
+| 2026-03-19 | PDF.js canvas rendering over `<embed>`/`<iframe>` | GitHub raw URLs serve PDFs as `application/octet-stream` — browser PDF plugins won't render them. Mobile browsers don't support inline PDF at all. PDF.js renders to `<canvas>` universally |
+| 2026-03-19 | `pdfjs-dist` as runtime dependency | ~300KB gzipped but code-split behind React.lazy(). Only loaded when a PDF file group is opened |
+| 2026-03-20 | Sandboxed iframe with `allow-scripts` only for HtmlPreview | Prevents navigation, popups, form submission, and top-level access. `allow-scripts` is needed for JS-heavy HTML files. srcdoc avoids CORS issues |
 
 ---
 
@@ -272,6 +279,28 @@
 - Inline error handling for auth failures
 - `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
 - GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
+
+### 2026-03-19–20: Phase 4 Continued (Renderers 4.5–4.10)
+- **Libraries:**
+  - `lib/shiki.ts`: Lazy singleton Shiki highlighter — dual theme (github-light + github-dark-dimmed), CSS variable output for zero-cost theme switching
+- **Renderers:**
+  - `CodeRenderer.tsx`: Shiki syntax highlighting with line numbers toggle, diff mode toggle (lazy-loads DiffRenderer), click-to-fullscreen. PR #22
+  - `JsonDiff.tsx`: Collapsible JSON tree viewer — color-coded values (strings/numbers/booleans/null), expand/collapse all, lazy-loaded. PR #23
+  - `DiffRenderer.tsx`: Line-level diff highlighting — uses `diff` package for change detection, Shiki for syntax highlighting, green/red background tints per line, dark mode support. Lazy-loaded from CodeRenderer. PR #24
+  - `CsvTable.tsx`: Sortable columns (asc/desc/none click cycle), sticky headers, proper CSV parsing (handles quoted fields, embedded newlines), responsive variant grid. Lazy-loaded. PR #25
+  - `PdfViewer.tsx`: PDF.js canvas rendering for universal device support (desktop + mobile). Page navigation (prev/next), responsive sizing via ResizeObserver, fullscreen, download link fallback. PRs #26–#29
+  - `HtmlPreview.tsx`: Sandboxed `<iframe sandbox="allow-scripts" srcdoc>` preview with Preview/Source toggle. Source mode delegates to CodeRenderer. Per-variant expand button, fullscreen. Lazy-loaded. PR #30
+- **CSS:**
+  - Shiki dual-theme integration — dark mode swaps to `--shiki-dark` CSS variables
+  - Line numbers via CSS counters (`.line-numbers` class)
+  - Diff view per-line background highlights — added (green tint) / removed (red tint) with dark mode variants
+- **Dependencies:**
+  - Added `pdfjs-dist@^4.10.38` for universal PDF rendering
+- **Bugs Fixed:**
+  - PdfViewer blank render on desktop — GitHub raw URLs serve PDFs as `application/octet-stream`, breaking browser `<embed>`. Fixed by switching to PDF.js canvas rendering (PRs #27, #28)
+  - PdfViewer not rendering on mobile — `<iframe>`/`<embed>` PDF not supported on iOS Safari/Android Chrome. PDF.js canvas works universally (PR #28)
+  - CI failure after PdfViewer merge — `package-lock.json` not synced with new `pdfjs-dist` dependency. Fixed in PR #29
+- **PRs:** #22, #23, #24, #25, #26, #27, #28, #29, #30
 
 ### 2026-03-19: Phase 4 In Progress (Renderers 4.1–4.4)
 - **Infrastructure (pulled forward from Phase 5):**
