@@ -17,6 +17,7 @@ const HtmlPreview = lazy(() =>
   import('./HtmlPreview').then((m) => ({ default: m.HtmlPreview })),
 );
 const AudioPlayer = lazy(() => import('./AudioPlayer'));
+const VideoPlayer = lazy(() => import('./VideoPlayer'));
 
 interface FileGroupRendererProps {
   group: FileGroup;
@@ -63,6 +64,12 @@ export function FileGroupRenderer({ group, owner, repo }: FileGroupRendererProps
       return (
         <Suspense fallback={<LoadingSpinner size="sm" text="Loading audio player..." />}>
           <AudioPlayer group={group} />
+        </Suspense>
+      );
+    case 'video':
+      return (
+        <Suspense fallback={<LoadingSpinner size="sm" text="Loading video player..." />}>
+          <VideoPlayer group={group} />
         </Suspense>
       );
     default:
