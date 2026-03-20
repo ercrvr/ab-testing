@@ -1,6 +1,6 @@
 # A/B Testing Dashboard — Progress Tracker
 
-> **Last Updated:** 2026-03-20
+> **Last Updated:** 2026-03-20 (VideoPlayer + sync fix)
 > **Current Phase:** Phase 3 Complete · Phase 4 In Progress
 > **Repository:** [github.com/ercrvr/ab-testing](https://github.com/ercrvr/ab-testing)
 
@@ -168,7 +168,7 @@
 | `PdfViewer.tsx` | ✅ | PDF.js canvas rendering for universal device support (desktop + mobile). Page navigation (prev/next), responsive sizing with ResizeObserver, fullscreen, download link fallback on error. Added `pdfjs-dist` dependency. PRs #26, #27, #28, #29 |
 | `HtmlPreview.tsx` | ✅ | Sandboxed `<iframe srcdoc>` with `allow-scripts`. Preview/Source toggle — Source mode delegates to CodeRenderer for syntax-highlighted HTML. Expand button per variant, fullscreen. Lazy-loaded. PR #30 |
 | `AudioPlayer.tsx` | ✅ | Native `<audio controls>` per variant, sync playback toggle (links play/pause/seek across variants), responsive grid, fullscreen. Lazy-loaded. PR #31 |
-| `VideoPlayer.tsx` | ⬜ | `<video>` element |
+| `VideoPlayer.tsx` | ✅ | Native `<video controls>` per variant with sync playback toggle (timestamp-based cooldown + active player tracking to prevent infinite loops). `playsInline` for iOS Safari. Responsive grid, fullscreen with autoplay. Lazy-loaded. PRs #32, #33 |
 | `BinaryInfo.tsx` | ⬜ | Metadata + download link fallback |
 
 ---
@@ -237,7 +237,7 @@
 | 2026-03-19 | React.lazy() for heavy renderers | JsonDiff, CsvTable, PdfViewer, HtmlPreview, DiffRenderer all code-split. Main bundle stays lean, renderers load on demand |
 | 2026-03-19 | PDF.js canvas rendering over `<embed>`/`<iframe>` | GitHub raw URLs serve PDFs as `application/octet-stream` — browser PDF plugins won't render them. Mobile browsers don't support inline PDF at all. PDF.js renders to `<canvas>` universally |
 | 2026-03-19 | `pdfjs-dist` as runtime dependency | ~300KB gzipped but code-split behind React.lazy(). Only loaded when a PDF file group is opened |
-| 2026-03-20 | Ref-based sync playback for AudioPlayer | Shared `audioRefs` array + `syncingRef` guard prevents infinite sync loops. `timeUpdate` threshold (0.3s) avoids micro-corrections. Same pattern will apply to VideoPlayer |
+| 2026-03-20 | Timestamp-based sync playback cooldown | Original boolean `syncingRef` guard caused infinite loops in Safari — it reset synchronously while `timeUpdate` events queue asynchronously. Replaced with `lastSyncRef` timestamp + 100ms cooldown + `activePlayerRef` tracking. Only syncs FROM the user-controlled player. Applied to both AudioPlayer and VideoPlayer. PR #33 |
 | 2026-03-20 | Sandboxed iframe with `allow-scripts` only for HtmlPreview | Prevents navigation, popups, form submission, and top-level access. `allow-scripts` is needed for JS-heavy HTML files. srcdoc avoids CORS issues |
 
 ---
@@ -247,6 +247,7 @@
 | Issue | Status | Owner | Notes |
 |---|---|---|---|
 | Phase 3 needs testing + iteration | ✅ Closed | Owner | All PRs merged and tested on device. Rate limit jumping, breadcrumb history, 304 header capture all resolved |
+| Sync playback AbortError on navigation | 🟡 Open | — | Enabling sync playback then navigating away triggers `AbortError: The operation was aborted.` (unhandled rejection). Likely caused by `el.play()` promise being interrupted when the component unmounts mid-playback. Needs cleanup in `useEffect` return or `.play().catch()` guarding. Seen on test9 page. |
 
 ---
 
@@ -280,6 +281,15 @@
 - Inline error handling for auth failures
 - `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
 - GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
+
+### 2026-03-20: Phase 4 Continued (Renderers 4.11–4.12)
+- **Renderers:**
+  - `VideoPlayer.tsx`: Native `<video controls>` per variant with sync playback toggle — timestamp-based cooldown (100ms) + active player tracking prevents infinite sync loops that crashed Safari. `playsInline` for iOS. Responsive grid, fullscreen with autoplay. Lazy-loaded. PRs #32, #33
+- **Bugs Fixed:**
+  - Sync playback infinite loop crashing Safari — boolean `syncingRef` guard replaced with timestamp cooldown + `activePlayerRef`. Fix applied to both VideoPlayer and AudioPlayer. PR #33
+- **Known Bug:**
+  - Sync playback AbortError on navigation — `el.play()` promise interrupted on unmount triggers unhandled rejection
+- **PRs:** #32, #33
 
 ### 2026-03-20: Phase 4 Continued (Renderer 4.11)
 - **Renderers:**
