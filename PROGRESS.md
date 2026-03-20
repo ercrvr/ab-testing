@@ -167,7 +167,7 @@
 | `CsvTable.tsx` | ✅ | Sortable columns (asc/desc/none cycle), sticky headers, CSV parsing with proper quote/newline handling, responsive variant grid. Lazy-loaded. PR #25 |
 | `PdfViewer.tsx` | ✅ | PDF.js canvas rendering for universal device support (desktop + mobile). Page navigation (prev/next), responsive sizing with ResizeObserver, fullscreen, download link fallback on error. Added `pdfjs-dist` dependency. PRs #26, #27, #28, #29 |
 | `HtmlPreview.tsx` | ✅ | Sandboxed `<iframe srcdoc>` with `allow-scripts`. Preview/Source toggle — Source mode delegates to CodeRenderer for syntax-highlighted HTML. Expand button per variant, fullscreen. Lazy-loaded. PR #30 |
-| `AudioPlayer.tsx` | ⬜ | `<audio>` element |
+| `AudioPlayer.tsx` | ✅ | Native `<audio controls>` per variant, sync playback toggle (links play/pause/seek across variants), responsive grid, fullscreen. Lazy-loaded. PR #31 |
 | `VideoPlayer.tsx` | ⬜ | `<video>` element |
 | `BinaryInfo.tsx` | ⬜ | Metadata + download link fallback |
 
@@ -237,6 +237,7 @@
 | 2026-03-19 | React.lazy() for heavy renderers | JsonDiff, CsvTable, PdfViewer, HtmlPreview, DiffRenderer all code-split. Main bundle stays lean, renderers load on demand |
 | 2026-03-19 | PDF.js canvas rendering over `<embed>`/`<iframe>` | GitHub raw URLs serve PDFs as `application/octet-stream` — browser PDF plugins won't render them. Mobile browsers don't support inline PDF at all. PDF.js renders to `<canvas>` universally |
 | 2026-03-19 | `pdfjs-dist` as runtime dependency | ~300KB gzipped but code-split behind React.lazy(). Only loaded when a PDF file group is opened |
+| 2026-03-20 | Ref-based sync playback for AudioPlayer | Shared `audioRefs` array + `syncingRef` guard prevents infinite sync loops. `timeUpdate` threshold (0.3s) avoids micro-corrections. Same pattern will apply to VideoPlayer |
 | 2026-03-20 | Sandboxed iframe with `allow-scripts` only for HtmlPreview | Prevents navigation, popups, form submission, and top-level access. `allow-scripts` is needed for JS-heavy HTML files. srcdoc avoids CORS issues |
 
 ---
@@ -279,6 +280,11 @@
 - Inline error handling for auth failures
 - `useAuth` hook integrated into AuthContext.tsx (no separate file needed)
 - GitHub Pages deploy verified working at ercrvr.github.io/ab-testing
+
+### 2026-03-20: Phase 4 Continued (Renderer 4.11)
+- **Renderers:**
+  - `AudioPlayer.tsx`: Native `<audio controls>` per variant with sync playback toggle — links play/pause/seek across all variant players simultaneously via shared refs. Responsive grid (1→2→3 cols), fullscreen modal, file extension badges. Lazy-loaded via `React.lazy()`. PR #31
+- **PRs:** #31
 
 ### 2026-03-19–20: Phase 4 Continued (Renderers 4.5–4.10)
 - **Libraries:**
