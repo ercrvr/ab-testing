@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import type { FileGroup } from '../../types';
 import { FullscreenModal } from './FullscreenModal';
 
@@ -11,23 +11,35 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
   const [synced, setSynced] = useState(false);
   const [fullscreenVariant, setFullscreenVariant] = useState<string | null>(null);
-  const syncingRef = useRef(false);
+
+  // Timestamp-based cooldown prevents infinite sync loops where setting
+  // currentTime fires timeUpdate on the target, cascading back.
+  const lastSyncRef = useRef(0);
+  const SYNC_COOLDOWN_MS = 100;
+  const activePlayerRef = useRef<number | null>(null);
 
   const handleTimeUpdate = useCallback(
     (sourceIndex: number) => {
-      if (!synced || syncingRef.current) return;
+      if (!synced) return;
+
+      const now = Date.now();
+      if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
+      if (activePlayerRef.current !== null && activePlayerRef.current !== sourceIndex) return;
+
       const source = audioRefs.current[sourceIndex];
       if (!source) return;
 
-      syncingRef.current = true;
+      const needsSync = audioRefs.current.some(
+        (el, i) => el && i !== sourceIndex && Math.abs(el.currentTime - source.currentTime) > 0.5,
+      );
+      if (!needsSync) return;
+
+      lastSyncRef.current = now;
       audioRefs.current.forEach((el, i) => {
         if (el && i !== sourceIndex) {
-          if (Math.abs(el.currentTime - source.currentTime) > 0.3) {
-            el.currentTime = source.currentTime;
-          }
+          el.currentTime = source.currentTime;
         }
       });
-      syncingRef.current = false;
     },
     [synced],
   );
@@ -35,6 +47,8 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const handlePlay = useCallback(
     (sourceIndex: number) => {
       if (!synced) return;
+      activePlayerRef.current = sourceIndex;
+      lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
         if (el && i !== sourceIndex) el.play().catch(() => {});
       });
@@ -45,12 +59,37 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const handlePause = useCallback(
     (sourceIndex: number) => {
       if (!synced) return;
+      activePlayerRef.current = sourceIndex;
+      lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
         if (el && i !== sourceIndex) el.pause();
       });
     },
     [synced],
   );
+
+  const handleSeeking = useCallback(
+    (sourceIndex: number) => {
+      if (!synced) return;
+      activePlayerRef.current = sourceIndex;
+      const source = audioRefs.current[sourceIndex];
+      if (!source) return;
+
+      lastSyncRef.current = Date.now();
+      audioRefs.current.forEach((el, i) => {
+        if (el && i !== sourceIndex) {
+          el.currentTime = source.currentTime;
+        }
+      });
+    },
+    [synced],
+  );
+
+  useEffect(() => {
+    if (!synced) {
+      activePlayerRef.current = null;
+    }
+  }, [synced]);
 
   const gridCols =
     variants.length === 1
@@ -110,6 +149,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
                 onTimeUpdate={() => handleTimeUpdate(index)}
                 onPlay={() => handlePlay(index)}
                 onPause={() => handlePause(index)}
+                onSeeking={() => handleSeeking(index)}
                 preload="metadata"
               >
                 Your browser does not support the audio element.
@@ -135,6 +175,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
               className="w-full max-w-2xl"
               src={fullscreenFile[1].downloadUrl}
               preload="metadata"
+              autoPlay
             >
               Your browser does not support the audio element.
             </audio>
