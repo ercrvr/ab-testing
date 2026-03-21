@@ -13,27 +13,72 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const [synced, setSynced] = useState(false);
   const [fullscreenVariant, setFullscreenVariant] = useState<string | null>(null);
 
-  // Timestamp-based cooldown prevents infinite sync loops where setting
-  // currentTime fires timeUpdate on the target, cascading back.
-  const lastSyncRef = useRef(0);
-  const SYNC_COOLDOWN_MS = 100;
-  const activePlayerRef = useRef<number | null>(null);
-
-  // Track mounted state to prevent play() calls after unmount
+  // ---- Sync: master/slave + polling ----
+  //
+  // Previous approach used bidirectional event handlers on every element with
+  // locks, cooldowns, and safety nets to prevent cascading loops.  After 8 PRs
+  // of whack-a-mole, we replaced it with the model every proven sync player
+  // uses (ViewSync, Bocoup/Popcorn.js, etc.):
+  //
+  //   1. The element the user interacts with becomes the "master"
+  //   2. A 250ms polling loop keeps slaves in sync with the master
+  //   3. Events from slave elements are ignored — no cascades possible
+  //
+  // This eliminates all cascade bugs by design: play/pause/seek events from
+  // slaves never propagate back to the master.
+  const masterRef = useRef<number | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
 
-  // Play lock: after handlePlay triggers sibling play(), freeze
-  // handleTimeUpdate/handleSeeking for this duration so they don't
-  // set currentTime on elements mid-play-transition (which aborts the promise).
-  const syncLockUntilRef = useRef(0);
-  const SYNC_PLAY_LOCK_MS = 500;
+  const SYNC_INTERVAL_MS = 250;
+  const SYNC_DRIFT_THRESHOLD = 0.3; // seconds
 
-  // Cleanup: pause all media and release resources on unmount to prevent
-  // AbortError from pending play() promises when navigating away
+  // ---- Sync helpers (stable — only reference refs, no reactive deps) ----
+
+  const stopSync = useCallback(() => {
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+    }
+  }, []);
+
+  const startSync = useCallback(() => {
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+    }
+
+    const tick = () => {
+      if (!mountedRef.current || masterRef.current === null) return;
+      const master = audioRefs.current[masterRef.current];
+      if (!master || master.paused) return;
+
+      audioRefs.current.forEach((el, i) => {
+        if (!el || i === masterRef.current) return;
+        // Correct drift — only hard-seek when meaningfully out of sync
+        if (Math.abs(el.currentTime - master.currentTime) > SYNC_DRIFT_THRESHOLD) {
+          el.currentTime = master.currentTime;
+        }
+        // Restart stalled slaves (browser may pause them during load)
+        if (el.paused && el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          el.play().catch(() => {});
+        }
+      });
+    };
+
+    tick(); // immediate first correction
+    syncIntervalRef.current = setInterval(tick, SYNC_INTERVAL_MS);
+  }, []);
+
+  // ---- Lifecycle ----
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
       audioRefs.current.forEach((el) => {
         if (el) {
           el.pause();
@@ -49,144 +94,73 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
     };
   }, []);
 
-  // Controlled autoplay for fullscreen modal — replaces autoPlay attribute
-  // to ensure the play() promise is always caught
+  // Controlled autoplay for fullscreen modal
   useEffect(() => {
     if (fullscreenAudioRef.current && fullscreenVariant) {
       fullscreenAudioRef.current.play().catch(() => {});
     }
   }, [fullscreenVariant]);
 
-  const handleTimeUpdate = useCallback(
-    (sourceIndex: number) => {
-      if (!synced || !mountedRef.current) return;
+  // Reset when sync toggled off
+  useEffect(() => {
+    if (!synced) {
+      stopSync();
+      masterRef.current = null;
+    }
+  }, [synced, stopSync]);
 
-      // Respect play lock — don't seek while siblings are starting playback
-      if (Date.now() < syncLockUntilRef.current) return;
-
-      const now = Date.now();
-      if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
-
-      // Only sync from the active player (the one the user interacted with)
-      if (activePlayerRef.current !== null && activePlayerRef.current !== sourceIndex) return;
-
-      const source = audioRefs.current[sourceIndex];
-      if (!source) return;
-
-      // Only seek siblings that are ready and meaningfully out of sync
-      const needsSync = audioRefs.current.some(
-        (el, i) =>
-          el &&
-          i !== sourceIndex &&
-          el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-          Math.abs(el.currentTime - source.currentTime) > 0.5,
-      );
-      if (!needsSync) return;
-
-      lastSyncRef.current = now;
-      audioRefs.current.forEach((el, i) => {
-        if (
-          el &&
-          i !== sourceIndex &&
-          el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-        ) {
-          el.currentTime = source.currentTime;
-        }
-      });
-    },
-    [synced],
-  );
+  // ---- Event handlers ----
 
   const handlePlay = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
 
-      // If play lock is active, this is a cascaded onPlay from a sibling we
-      // just programmatically started — don't override activePlayer or re-sync.
-      if (Date.now() < syncLockUntilRef.current) return;
+      const currentMaster =
+        masterRef.current !== null ? audioRefs.current[masterRef.current] : null;
 
-      activePlayerRef.current = sourceIndex;
+      // Become master if: no master yet, or current master is paused/gone.
+      // A paused master means this is a fresh user gesture on a (possibly
+      // different) element — not a programmatic play from the sync loop.
+      if (masterRef.current === null || !currentMaster || currentMaster.paused) {
+        masterRef.current = sourceIndex;
+        startSync();
+        return;
+      }
 
-      const source = audioRefs.current[sourceIndex];
+      // Current master is playing — slave events are ignored
+      if (sourceIndex !== masterRef.current) return;
 
-      // Lock out handleTimeUpdate/handleSeeking/handlePause/handlePlay
-      // while siblings start playback.
-      syncLockUntilRef.current = Date.now() + SYNC_PLAY_LOCK_MS;
-      lastSyncRef.current = Date.now();
-
-      audioRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex && el.paused) {
-          // Sync position BEFORE playing — avoids seek-during-play race
-          if (source) el.currentTime = source.currentTime;
-          el.play().catch(() => {});
-        }
-      });
-
-      // Safety net: after lock expires, verify the source is still playing.
-      // The browser may transiently pause it during sibling startup (resource
-      // contention loading from remote URLs).  If paused, recover it by
-      // syncing its position FROM the playing sibling first, then re-playing.
-      setTimeout(() => {
-        if (!mountedRef.current || !synced) return;
-        if (source && source.paused && activePlayerRef.current === sourceIndex) {
-          // Source was paused — its currentTime is stale.
-          // Catch up to the sibling that kept playing.
-          audioRefs.current.forEach((el, i) => {
-            if (el && i !== sourceIndex && !el.paused) {
-              source.currentTime = el.currentTime;
-            }
-          });
-          // Re-lock so this recovery play doesn't cascade
-          syncLockUntilRef.current = Date.now() + SYNC_PLAY_LOCK_MS;
-          source.play().catch(() => {});
-        }
-      }, SYNC_PLAY_LOCK_MS + 50);
+      // Master itself resumed (e.g., after buffering) — ensure loop runs
+      startSync();
     },
-    [synced],
+    [synced, startSync],
   );
 
   const handlePause = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
 
-      // Respect play lock — don't cascade pauses while siblings are starting.
-      // Setting currentTime before play() can fire a transient browser pause
-      // event on the sibling, which would cascade back and kill the source.
-      if (Date.now() < syncLockUntilRef.current) return;
+      // Only the master can cascade pauses
+      if (sourceIndex !== masterRef.current) return;
 
-      // Only cascade pause from the active player (user-initiated).
-      // Ignore pause events from siblings that paused due to buffering/seeking.
-      if (activePlayerRef.current !== null && activePlayerRef.current !== sourceIndex) return;
-
-      activePlayerRef.current = sourceIndex;
-      lastSyncRef.current = Date.now();
+      stopSync();
       audioRefs.current.forEach((el, i) => {
         if (el && i !== sourceIndex && !el.paused) el.pause();
       });
     },
-    [synced],
+    [synced, stopSync],
   );
 
   const handleSeeking = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
 
-      // Respect play lock
-      if (Date.now() < syncLockUntilRef.current) return;
+      // Only the master can cascade seeks
+      if (sourceIndex !== masterRef.current) return;
 
-      // Cooldown prevents seeking ping-pong: when handleTimeUpdate seeks a
-      // sibling, that sibling fires onSeeking which would seek back, creating
-      // an infinite loop that stalls both elements.  Programmatic seeks land
-      // within milliseconds of the lastSyncRef write, so the cooldown catches
-      // them while user-initiated seeks (scrubbing) always arrive later.
-      const now = Date.now();
-      if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
-
-      activePlayerRef.current = sourceIndex;
       const source = audioRefs.current[sourceIndex];
       if (!source) return;
 
-      lastSyncRef.current = now;
       audioRefs.current.forEach((el, i) => {
         if (
           el &&
@@ -200,12 +174,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
     [synced],
   );
 
-  // Reset active player when sync is toggled off
-  useEffect(() => {
-    if (!synced) {
-      activePlayerRef.current = null;
-    }
-  }, [synced]);
+  // ---- Render ----
 
   const gridCols =
     variants.length === 1
@@ -255,14 +224,13 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
               </button>
             </div>
 
-            {/* Audio player */}
+            {/* Audio player — no onTimeUpdate (polling replaces it) */}
             <div className="p-4">
               <audio
                 ref={(el) => { audioRefs.current[index] = el; }}
                 controls
                 className="w-full"
                 src={file.downloadUrl}
-                onTimeUpdate={() => handleTimeUpdate(index)}
                 onPlay={() => handlePlay(index)}
                 onPause={() => handlePause(index)}
                 onSeeking={() => handleSeeking(index)}
