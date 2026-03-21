@@ -124,10 +124,20 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
 
       // Safety net: after lock expires, verify the source is still playing.
       // The browser may transiently pause it during sibling startup (resource
-      // contention loading from remote URLs).  If paused, re-play it.
+      // contention loading from remote URLs).  If paused, recover it by
+      // syncing its position FROM the playing sibling first, then re-playing.
       setTimeout(() => {
         if (!mountedRef.current || !synced) return;
         if (source && source.paused && activePlayerRef.current === sourceIndex) {
+          // Source was paused — its currentTime is stale.
+          // Catch up to the sibling that kept playing.
+          videoRefs.current.forEach((el, i) => {
+            if (el && i !== sourceIndex && !el.paused) {
+              source.currentTime = el.currentTime;
+            }
+          });
+          // Re-lock so this recovery play doesn't cascade
+          syncLockUntilRef.current = Date.now() + SYNC_PLAY_LOCK_MS;
           source.play().catch(() => {});
         }
       }, SYNC_PLAY_LOCK_MS + 50);
