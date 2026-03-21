@@ -9,6 +9,7 @@ interface VideoPlayerProps {
 export default function VideoPlayer({ group }: VideoPlayerProps) {
   const variants = Object.entries(group.files);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const fullscreenVideoRef = useRef<HTMLVideoElement>(null);
   const [synced, setSynced] = useState(false);
   const [fullscreenVariant, setFullscreenVariant] = useState<string | null>(null);
 
@@ -21,9 +22,41 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   // Track which player the user is actively controlling
   const activePlayerRef = useRef<number | null>(null);
 
+  // Track mounted state to prevent play() calls after unmount
+  const mountedRef = useRef(true);
+
+  // Cleanup: pause all media and release resources on unmount to prevent
+  // AbortError from pending play() promises when navigating away
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      videoRefs.current.forEach((el) => {
+        if (el) {
+          el.pause();
+          el.removeAttribute('src');
+          el.load();
+        }
+      });
+      if (fullscreenVideoRef.current) {
+        fullscreenVideoRef.current.pause();
+        fullscreenVideoRef.current.removeAttribute('src');
+        fullscreenVideoRef.current.load();
+      }
+    };
+  }, []);
+
+  // Controlled autoplay for fullscreen modal — replaces autoPlay attribute
+  // to ensure the play() promise is always caught
+  useEffect(() => {
+    if (fullscreenVideoRef.current && fullscreenVariant) {
+      fullscreenVideoRef.current.play().catch(() => {});
+    }
+  }, [fullscreenVariant]);
+
   const handleTimeUpdate = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
 
       const now = Date.now();
       if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
@@ -52,7 +85,7 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
 
   const handlePlay = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       videoRefs.current.forEach((el, i) => {
@@ -64,7 +97,7 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
 
   const handlePause = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       videoRefs.current.forEach((el, i) => {
@@ -76,7 +109,7 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
 
   const handleSeeking = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       const source = videoRefs.current[sourceIndex];
       if (!source) return;
@@ -179,12 +212,12 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
         >
           <div className="flex items-center justify-center p-4">
             <video
+              ref={fullscreenVideoRef}
               controls
               playsInline
               className="w-full max-w-4xl rounded"
               src={fullscreenFile[1].downloadUrl}
               preload="metadata"
-              autoPlay
             >
               Your browser does not support the video element.
             </video>
