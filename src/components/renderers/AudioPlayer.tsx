@@ -9,6 +9,7 @@ interface AudioPlayerProps {
 export default function AudioPlayer({ group }: AudioPlayerProps) {
   const variants = Object.entries(group.files);
   const audioRefs = useRef<(HTMLAudioElement | null)[]>([]);
+  const fullscreenAudioRef = useRef<HTMLAudioElement>(null);
   const [synced, setSynced] = useState(false);
   const [fullscreenVariant, setFullscreenVariant] = useState<string | null>(null);
 
@@ -18,9 +19,41 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const SYNC_COOLDOWN_MS = 100;
   const activePlayerRef = useRef<number | null>(null);
 
+  // Track mounted state to prevent play() calls after unmount
+  const mountedRef = useRef(true);
+
+  // Cleanup: pause all media and release resources on unmount to prevent
+  // AbortError from pending play() promises when navigating away
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      audioRefs.current.forEach((el) => {
+        if (el) {
+          el.pause();
+          el.removeAttribute('src');
+          el.load();
+        }
+      });
+      if (fullscreenAudioRef.current) {
+        fullscreenAudioRef.current.pause();
+        fullscreenAudioRef.current.removeAttribute('src');
+        fullscreenAudioRef.current.load();
+      }
+    };
+  }, []);
+
+  // Controlled autoplay for fullscreen modal — replaces autoPlay attribute
+  // to ensure the play() promise is always caught
+  useEffect(() => {
+    if (fullscreenAudioRef.current && fullscreenVariant) {
+      fullscreenAudioRef.current.play().catch(() => {});
+    }
+  }, [fullscreenVariant]);
+
   const handleTimeUpdate = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
 
       const now = Date.now();
       if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
@@ -46,7 +79,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
 
   const handlePlay = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
@@ -58,7 +91,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
 
   const handlePause = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
@@ -70,7 +103,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
 
   const handleSeeking = useCallback(
     (sourceIndex: number) => {
-      if (!synced) return;
+      if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
       const source = audioRefs.current[sourceIndex];
       if (!source) return;
@@ -171,11 +204,11 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
         >
           <div className="flex items-center justify-center p-8">
             <audio
+              ref={fullscreenAudioRef}
               controls
               className="w-full max-w-2xl"
               src={fullscreenFile[1].downloadUrl}
               preload="metadata"
-              autoPlay
             >
               Your browser does not support the audio element.
             </audio>
