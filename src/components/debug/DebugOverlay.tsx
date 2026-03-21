@@ -35,6 +35,14 @@ function installInterceptors() {
   });
 
   window.addEventListener('unhandledrejection', (event) => {
+    // Suppress AbortError from media play() — the browser's native play
+    // button creates a promise we can't catch. During sync playback,
+    // concurrent media loads can cause resource contention that aborts
+    // the pending play(). This is expected and harmless.
+    if (event.reason instanceof DOMException && event.reason.name === 'AbortError') {
+      event.preventDefault();
+      return;
+    }
     const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
     addLog('ERROR', `Unhandled rejection: ${reason.slice(0, 500)}`, '#fca5a5');
     globalShowOverlay?.();
