@@ -39,7 +39,7 @@ function installInterceptors() {
     // button creates a promise we can't catch. During sync playback,
     // concurrent media loads can cause resource contention that aborts
     // the pending play(). This is expected and harmless.
-    if (event.reason instanceof DOMException && event.reason.name === 'AbortError') {
+    if (event.reason?.name === 'AbortError') {
       event.preventDefault();
       return;
     }
