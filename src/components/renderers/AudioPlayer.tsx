@@ -100,11 +100,17 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const handlePlay = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
+
+      // If play lock is active, this is a cascaded onPlay from a sibling we
+      // just programmatically started — don't override activePlayer or re-sync.
+      if (Date.now() < syncLockUntilRef.current) return;
+
       activePlayerRef.current = sourceIndex;
 
       const source = audioRefs.current[sourceIndex];
 
-      // Lock out handleTimeUpdate/handleSeeking while siblings start
+      // Lock out handleTimeUpdate/handleSeeking/handlePause/handlePlay
+      // while siblings start playback.
       syncLockUntilRef.current = Date.now() + SYNC_PLAY_LOCK_MS;
       lastSyncRef.current = Date.now();
 
@@ -148,11 +154,19 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
       // Respect play lock
       if (Date.now() < syncLockUntilRef.current) return;
 
+      // Cooldown prevents seeking ping-pong: when handleTimeUpdate seeks a
+      // sibling, that sibling fires onSeeking which would seek back, creating
+      // an infinite loop that stalls both elements.  Programmatic seeks land
+      // within milliseconds of the lastSyncRef write, so the cooldown catches
+      // them while user-initiated seeks (scrubbing) always arrive later.
+      const now = Date.now();
+      if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
+
       activePlayerRef.current = sourceIndex;
       const source = audioRefs.current[sourceIndex];
       if (!source) return;
 
-      lastSyncRef.current = Date.now();
+      lastSyncRef.current = now;
       audioRefs.current.forEach((el, i) => {
         if (
           el &&
