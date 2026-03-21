@@ -122,10 +122,20 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   const handlePause = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
+
+      // Respect play lock — don't cascade pauses while siblings are starting.
+      // Setting currentTime before play() can fire a transient browser pause
+      // event on the sibling, which would cascade back and kill the source.
+      if (Date.now() < syncLockUntilRef.current) return;
+
+      // Only cascade pause from the active player (user-initiated).
+      // Ignore pause events from siblings that paused due to buffering/seeking.
+      if (activePlayerRef.current !== null && activePlayerRef.current !== sourceIndex) return;
+
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex) el.pause();
+        if (el && i !== sourceIndex && !el.paused) el.pause();
       });
     },
     [synced],
