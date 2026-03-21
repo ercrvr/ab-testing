@@ -121,6 +121,16 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
           el.play().catch(() => {});
         }
       });
+
+      // Safety net: after lock expires, verify the source is still playing.
+      // The browser may transiently pause it during sibling startup (resource
+      // contention loading from remote URLs).  If paused, re-play it.
+      setTimeout(() => {
+        if (!mountedRef.current || !synced) return;
+        if (source && source.paused && activePlayerRef.current === sourceIndex) {
+          source.play().catch(() => {});
+        }
+      }, SYNC_PLAY_LOCK_MS + 50);
     },
     [synced],
   );
