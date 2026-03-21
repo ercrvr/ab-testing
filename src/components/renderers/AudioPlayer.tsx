@@ -22,6 +22,19 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   // Track mounted state to prevent play() calls after unmount
   const mountedRef = useRef(true);
 
+  // Retry play() on AbortError — browser resource contention during sync
+  // can abort pending play promises when multiple elements load simultaneously.
+  // Retries up to 3 times with 200ms delay between attempts.
+  const safePlay = (el: HTMLMediaElement, retries = 3) => {
+    el.play().catch((err) => {
+      if (err?.name === 'AbortError' && mountedRef.current && retries > 0) {
+        setTimeout(() => {
+          if (mountedRef.current) safePlay(el, retries - 1);
+        }, 200);
+      }
+    });
+  };
+
   // Cleanup: pause all media and release resources on unmount to prevent
   // AbortError from pending play() promises when navigating away
   useEffect(() => {
@@ -47,7 +60,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
   // to ensure the play() promise is always caught
   useEffect(() => {
     if (fullscreenAudioRef.current && fullscreenVariant) {
-      fullscreenAudioRef.current.play().catch(() => {});
+      safePlay(fullscreenAudioRef.current);
     }
   }, [fullscreenVariant]);
 
@@ -83,7 +96,7 @@ export default function AudioPlayer({ group }: AudioPlayerProps) {
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       audioRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex) el.play().catch(() => {});
+        if (el && i !== sourceIndex && el.paused) safePlay(el);
       });
     },
     [synced],

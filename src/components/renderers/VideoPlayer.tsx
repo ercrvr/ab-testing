@@ -25,6 +25,19 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   // Track mounted state to prevent play() calls after unmount
   const mountedRef = useRef(true);
 
+  // Retry play() on AbortError — browser resource contention during sync
+  // can abort pending play promises when multiple elements load simultaneously.
+  // Retries up to 3 times with 200ms delay between attempts.
+  const safePlay = (el: HTMLMediaElement, retries = 3) => {
+    el.play().catch((err) => {
+      if (err?.name === 'AbortError' && mountedRef.current && retries > 0) {
+        setTimeout(() => {
+          if (mountedRef.current) safePlay(el, retries - 1);
+        }, 200);
+      }
+    });
+  };
+
   // Cleanup: pause all media and release resources on unmount to prevent
   // AbortError from pending play() promises when navigating away
   useEffect(() => {
@@ -50,7 +63,7 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   // to ensure the play() promise is always caught
   useEffect(() => {
     if (fullscreenVideoRef.current && fullscreenVariant) {
-      fullscreenVideoRef.current.play().catch(() => {});
+      safePlay(fullscreenVideoRef.current);
     }
   }, [fullscreenVariant]);
 
@@ -89,7 +102,7 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
       activePlayerRef.current = sourceIndex;
       lastSyncRef.current = Date.now();
       videoRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex) el.play().catch(() => {});
+        if (el && i !== sourceIndex && el.paused) safePlay(el);
       });
     },
     [synced],
