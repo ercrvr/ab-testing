@@ -13,30 +13,20 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   const [synced, setSynced] = useState(false);
   const [fullscreenVariant, setFullscreenVariant] = useState<string | null>(null);
 
-  // Sync guard: use a timestamp-based cooldown instead of a boolean flag.
-  // This prevents infinite loops where setting currentTime fires timeUpdate
-  // on the target, which would re-trigger sync before the flag resets.
+  // Timestamp-based cooldown prevents infinite sync loops where setting
+  // currentTime fires timeUpdate on the target, cascading back.
   const lastSyncRef = useRef(0);
   const SYNC_COOLDOWN_MS = 100;
-
-  // Track which player the user is actively controlling
   const activePlayerRef = useRef<number | null>(null);
 
   // Track mounted state to prevent play() calls after unmount
   const mountedRef = useRef(true);
 
-  // Retry play() on AbortError — browser resource contention during sync
-  // can abort pending play promises when multiple elements load simultaneously.
-  // Retries up to 3 times with 200ms delay between attempts.
-  const safePlay = (el: HTMLMediaElement, retries = 3) => {
-    el.play().catch((err) => {
-      if (err?.name === 'AbortError' && mountedRef.current && retries > 0) {
-        setTimeout(() => {
-          if (mountedRef.current) safePlay(el, retries - 1);
-        }, 200);
-      }
-    });
-  };
+  // Play lock: after handlePlay triggers sibling play(), freeze
+  // handleTimeUpdate/handleSeeking for this duration so they don't
+  // set currentTime on elements mid-play-transition (which aborts the promise).
+  const syncLockUntilRef = useRef(0);
+  const SYNC_PLAY_LOCK_MS = 500;
 
   // Cleanup: pause all media and release resources on unmount to prevent
   // AbortError from pending play() promises when navigating away
@@ -63,13 +53,16 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   // to ensure the play() promise is always caught
   useEffect(() => {
     if (fullscreenVideoRef.current && fullscreenVariant) {
-      safePlay(fullscreenVideoRef.current);
+      fullscreenVideoRef.current.play().catch(() => {});
     }
   }, [fullscreenVariant]);
 
   const handleTimeUpdate = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
+
+      // Respect play lock — don't seek while siblings are starting playback
+      if (Date.now() < syncLockUntilRef.current) return;
 
       const now = Date.now();
       if (now - lastSyncRef.current < SYNC_COOLDOWN_MS) return;
@@ -80,15 +73,23 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
       const source = videoRefs.current[sourceIndex];
       if (!source) return;
 
+      // Only seek siblings that are ready and meaningfully out of sync
       const needsSync = videoRefs.current.some(
-        (el, i) => el && i !== sourceIndex && Math.abs(el.currentTime - source.currentTime) > 0.5,
+        (el, i) =>
+          el &&
+          i !== sourceIndex &&
+          el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          Math.abs(el.currentTime - source.currentTime) > 0.5,
       );
-
       if (!needsSync) return;
 
       lastSyncRef.current = now;
       videoRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex) {
+        if (
+          el &&
+          i !== sourceIndex &&
+          el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        ) {
           el.currentTime = source.currentTime;
         }
       });
@@ -100,9 +101,19 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
       activePlayerRef.current = sourceIndex;
+
+      const source = videoRefs.current[sourceIndex];
+
+      // Lock out handleTimeUpdate/handleSeeking while siblings start
+      syncLockUntilRef.current = Date.now() + SYNC_PLAY_LOCK_MS;
       lastSyncRef.current = Date.now();
+
       videoRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex && el.paused) safePlay(el);
+        if (el && i !== sourceIndex && el.paused) {
+          // Sync position BEFORE playing — avoids seek-during-play race
+          if (source) el.currentTime = source.currentTime;
+          el.play().catch(() => {});
+        }
       });
     },
     [synced],
@@ -123,13 +134,21 @@ export default function VideoPlayer({ group }: VideoPlayerProps) {
   const handleSeeking = useCallback(
     (sourceIndex: number) => {
       if (!synced || !mountedRef.current) return;
+
+      // Respect play lock
+      if (Date.now() < syncLockUntilRef.current) return;
+
       activePlayerRef.current = sourceIndex;
       const source = videoRefs.current[sourceIndex];
       if (!source) return;
 
       lastSyncRef.current = Date.now();
       videoRefs.current.forEach((el, i) => {
-        if (el && i !== sourceIndex) {
+        if (
+          el &&
+          i !== sourceIndex &&
+          el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        ) {
           el.currentTime = source.currentTime;
         }
       });
